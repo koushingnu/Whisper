@@ -1,13 +1,11 @@
 import { NextRequest } from "next/server";
 import { TranscriptionError } from "@/lib/utils/errors";
 import { createErrorResponse, createSuccessResponse } from "@/lib/utils/errors";
-import { PROCESSING_CONFIG, COSTS } from "@/lib/utils/constants";
 import { splitAudioIntoChunks, getAudioMetadata } from "./services/audio";
 import {
   transcribeChunks,
   mergeTranscriptionResults,
 } from "./services/whisper";
-import { formatTranscription } from "./services/gpt";
 import { TranscriptionResult } from "@/lib/types/audio";
 
 // Route Handlerの設定
@@ -34,43 +32,49 @@ export async function POST(request: NextRequest) {
       throw new TranscriptionError("VALIDATION_ERROR", "No file uploaded");
     }
 
+    console.log(
+      "Processing file:",
+      file.name,
+      "Size:",
+      file.size,
+      "Type:",
+      file.type
+    );
+
     // 処理開始時刻を記録
     const startTime = Date.now();
 
-    // 音声メタデータを取得
-    const metadata = await getAudioMetadata(file);
+    try {
+      // ファイルをチャンクに分割
+      console.log("Splitting audio into chunks...");
+      const chunks = await splitAudioIntoChunks(file);
+      console.log("Split into", chunks.length, "chunks");
 
-    // ファイルをチャンクに分割
-    const chunks = await splitAudioIntoChunks(file);
+      // Whisper APIで文字起こし
+      console.log("Starting transcription...");
+      const transcriptionResults = await transcribeChunks(chunks);
+      console.log("Transcription completed");
+      const result = mergeTranscriptionResults(transcriptionResults);
 
-    // Whisper APIで文字起こし
-    const transcriptionResults = await transcribeChunks(chunks);
-    const mergedResult = mergeTranscriptionResults(transcriptionResults);
+      // 処理終了時刻を記録
+      const endTime = Date.now();
 
-    // GPT-4でテキストを整形
-    const formattedResult = await formatTranscription(mergedResult);
+      // レスポンスを作成
+      const transcriptionResult: TranscriptionResult = {
+        ...result,
+        startTime,
+        endTime,
+      };
 
-    // 処理終了時刻を記録
-    const endTime = Date.now();
-
-    // コストを計算
-    const whisperCost = (metadata.duration / 60) * COSTS.WHISPER.BASE;
-    const gptCost = (formattedResult.text.length / 1000) * COSTS.GPT4.INPUT;
-
-    // レスポンスを作成
-    const result: TranscriptionResult = {
-      ...formattedResult,
-      startTime,
-      endTime,
-      costs: {
-        whisper: whisperCost,
-        gpt: gptCost,
-      },
-    };
-
-    return Response.json(createSuccessResponse(result));
+      return Response.json(createSuccessResponse(transcriptionResult));
+    } catch (processingError) {
+      console.error("Processing error:", processingError);
+      throw processingError;
+    }
   } catch (error) {
     // エラーハンドリング
+    console.error("API error:", error);
+
     if (error instanceof TranscriptionError) {
       return Response.json(
         createErrorResponse(error.code, error.message, error.details),
@@ -79,12 +83,11 @@ export async function POST(request: NextRequest) {
     }
 
     // 予期せぬエラー
-    console.error("Unexpected error:", error);
     return Response.json(
       createErrorResponse(
         "UNKNOWN_ERROR",
-        "An unexpected error occurred",
-        error
+        "音声ファイルの処理中にエラーが発生しました",
+        error instanceof Error ? error.message : String(error)
       ),
       { status: 500 }
     );

@@ -2,7 +2,6 @@ import OpenAI from "openai";
 import { TranscriptionError } from "@/lib/utils/errors";
 import { API_ENDPOINTS, PROCESSING_CONFIG } from "@/lib/utils/constants";
 import { AudioChunk, WhisperResponse } from "@/lib/types";
-import { encodeChunkToBase64 } from "./audio";
 
 // OpenAIクライアントの初期化
 const openai = new OpenAI({
@@ -17,27 +16,55 @@ export async function transcribeWithWhisper(
   retryCount = 0
 ): Promise<WhisperResponse> {
   try {
-    // チャンクをBase64エンコード
-    const base64Audio = await encodeChunkToBase64(chunk.blob);
+    // FormDataを作成
+    const formData = new FormData();
+    formData.append(
+      "file",
+      new Blob([chunk.blob], { type: chunk.type }),
+      chunk.name
+    );
+    formData.append("model", "whisper-1");
+    formData.append("language", "ja");
+    formData.append("response_format", "verbose_json");
 
     // APIリクエスト
-    const response = await openai.audio.transcriptions.create({
-      file: new File([chunk.blob], chunk.name, { type: chunk.type }),
-      model: "whisper-1",
-      language: "ja",
-      response_format: "verbose_json",
-      timestamp_granularities: ["segment"],
-    });
+    const response = await fetch(
+      "https://api.openai.com/v1/audio/transcriptions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
+        body: formData,
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new TranscriptionError(
+        "API_ERROR",
+        `Whisper API error: ${error.error?.message || "Unknown error"}`,
+        error
+      );
+    }
+
+    const data = await response.json();
+
+    if (!data.text || !data.segments) {
+      throw new TranscriptionError(
+        "API_ERROR",
+        "Invalid response from Whisper API"
+      );
+    }
 
     return {
-      text: response.text,
-      segments: response.segments.map((segment) => ({
+      text: data.text,
+      segments: data.segments.map((segment: any) => ({
         text: segment.text,
         start: segment.start,
         end: segment.end,
-        confidence: segment.confidence,
       })),
-      language: response.language,
+      language: data.language || "ja",
     };
   } catch (error: any) {
     // レート制限エラーの場合
@@ -53,16 +80,17 @@ export async function transcribeWithWhisper(
     }
 
     // APIエラーの場合
-    if (error?.status >= 400) {
-      throw new TranscriptionError(
-        "API_ERROR",
-        `Whisper API error: ${error.message}`,
-        error
-      );
+    if (error instanceof TranscriptionError) {
+      throw error;
     }
 
     // その他のエラー
-    throw new TranscriptionError("UNKNOWN_ERROR", undefined, error);
+    console.error("Whisper API error:", error);
+    throw new TranscriptionError(
+      "UNKNOWN_ERROR",
+      "音声の文字起こしに失敗しました",
+      error
+    );
   }
 }
 

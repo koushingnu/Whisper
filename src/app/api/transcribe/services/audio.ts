@@ -21,31 +21,30 @@ export async function splitAudioIntoChunks(file: File): Promise<AudioChunk[]> {
       throw new TranscriptionError("UNSUPPORTED_FORMAT");
     }
 
-    // チャンクサイズの計算（バイト単位）
-    const chunkSize = AUDIO_CONFIG.CHUNK_SIZE_MB * 1024 * 1024;
-    const chunks: AudioChunk[] = [];
+    // 現時点では分割せずに1つのチャンクとして処理
+    const arrayBuffer = await file.arrayBuffer();
+    const blob = new Blob([arrayBuffer], { type: file.type });
 
-    // ファイルをチャンクに分割
-    for (let start = 0; start < file.size; start += chunkSize) {
-      const end = Math.min(start + chunkSize, file.size);
-      const chunk = file.slice(start, end);
-
-      chunks.push({
-        blob: chunk,
-        start,
-        end,
-        size: chunk.size,
+    return [
+      {
+        blob,
+        start: 0,
+        end: file.size,
+        size: file.size,
         type: file.type,
-        name: `${file.name.replace(/\.[^/.]+$/, "")}_chunk_${chunks.length + 1}${getFileExtension(file.name)}`,
-      });
-    }
-
-    return chunks;
+        name: file.name,
+      },
+    ];
   } catch (error) {
+    console.error("Error splitting audio:", error);
     if (error instanceof TranscriptionError) {
       throw error;
     }
-    throw new TranscriptionError("UNKNOWN_ERROR", undefined, error);
+    throw new TranscriptionError(
+      "UNKNOWN_ERROR",
+      "音声ファイルの処理に失敗しました",
+      error
+    );
   }
 }
 
@@ -53,22 +52,17 @@ export async function splitAudioIntoChunks(file: File): Promise<AudioChunk[]> {
  * チャンクをBase64エンコード
  */
 export async function encodeChunkToBase64(chunk: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = (reader.result as string).split(",")[1];
-      resolve(base64);
-    };
-    reader.onerror = () => {
-      reject(
-        new TranscriptionError(
-          "UNKNOWN_ERROR",
-          "Failed to encode chunk to base64"
-        )
-      );
-    };
-    reader.readAsDataURL(chunk);
-  });
+  try {
+    const arrayBuffer = await chunk.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    return buffer.toString("base64");
+  } catch (error) {
+    throw new TranscriptionError(
+      "UNKNOWN_ERROR",
+      "Failed to encode chunk to base64",
+      error
+    );
+  }
 }
 
 /**

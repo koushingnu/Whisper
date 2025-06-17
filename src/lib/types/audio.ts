@@ -49,7 +49,6 @@ export interface WhisperSegment {
   text: string;
   start: number;
   end: number;
-  confidence?: number;
 }
 
 /**
@@ -61,8 +60,4 @@ export interface TranscriptionResult {
   language: string;
   startTime: number;
   endTime: number;
-  costs: {
-    whisper: number;
-    gpt: number;
-  };
 }
