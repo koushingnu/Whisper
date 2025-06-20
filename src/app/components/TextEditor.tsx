@@ -10,7 +10,6 @@ interface TextEditorProps {
 
 export function TextEditor({ transcriptionResult, onSave }: TextEditorProps) {
   const [segments, setSegments] = useState<Segment[]>([]);
-  const [selectedText, setSelectedText] = useState("");
   const [showDictionaryForm, setShowDictionaryForm] = useState(false);
   const [dictionaryEntry, setDictionaryEntry] = useState<
     Partial<DictionaryEntry>
@@ -30,10 +29,6 @@ export function TextEditor({ transcriptionResult, onSave }: TextEditorProps) {
     let currentStart = 0;
     let lastEnd = 0;
     let textStartIndex = 0;
-
-    // テキストを文単位で分割（。や！や？で区切る）
-    const sentences = text.match(/[^。！？]+[。！？]|[^。！？]+$/g) || [text];
-    let sentenceIndex = 0;
 
     for (let i = 0; i < rawSegments.length; i++) {
       const segment = rawSegments[i];
@@ -108,7 +103,6 @@ export function TextEditor({ transcriptionResult, onSave }: TextEditorProps) {
   const handleTextSelection = () => {
     const selection = window.getSelection();
     if (selection && selection.toString().trim()) {
-      setSelectedText(selection.toString().trim());
       setDictionaryEntry((prev) => ({
         ...prev,
         incorrect: selection.toString().trim(),
