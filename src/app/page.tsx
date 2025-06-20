@@ -16,6 +16,7 @@ export default function Home() {
     text: string;
   } | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // 認証状態を確認
   useEffect(() => {
@@ -25,6 +26,11 @@ export default function Home() {
         setIsAuthenticated(response.ok);
       } catch (error) {
         setIsAuthenticated(false);
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "認証の確認中にエラーが発生しました";
+        setError(errorMessage);
       }
     };
     checkAuth();
@@ -39,6 +45,7 @@ export default function Home() {
     setIsProcessing(true);
     setTranscriptionStatus("transcribing");
     setProgress(0);
+    setError(null);
 
     try {
       const formData = new FormData();
@@ -54,7 +61,7 @@ export default function Home() {
           window.location.href = "/login";
           return;
         }
-        throw new Error("Transcription failed");
+        throw new Error("文字起こしに失敗しました");
       }
 
       const result = await response.json();
@@ -62,7 +69,11 @@ export default function Home() {
       setTranscriptionStatus("completed");
       setProgress(100);
     } catch (error) {
-      console.error("Error:", error);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "文字起こし中にエラーが発生しました";
+      setError(errorMessage);
       setTranscriptionStatus("error");
     } finally {
       setIsProcessing(false);
@@ -74,6 +85,8 @@ export default function Home() {
       window.location.href = "/login";
       return;
     }
+
+    setError(null);
 
     try {
       const response = await fetch("/api/chatgpt", {
@@ -89,13 +102,15 @@ export default function Home() {
           window.location.href = "/login";
           return;
         }
-        throw new Error("Correction failed");
+        throw new Error("校正に失敗しました");
       }
 
       const result = await response.json();
       setTranscriptionResult(result);
     } catch (error) {
-      console.error("Error:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "校正中にエラーが発生しました";
+      setError(errorMessage);
     }
   };
 
@@ -116,6 +131,12 @@ export default function Home() {
               </a>
               が必要です
             </p>
+          </div>
+        )}
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+            <p className="text-red-800">{error}</p>
           </div>
         )}
 
