@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { FileUploader } from "./components/FileUploader";
 import { ProgressBar } from "./components/ProgressBar";
 import { TextEditor } from "./components/TextEditor";
-import { TranscriptionStatus } from "@/lib/types";
+import { TranscriptionStatus, TranscriptionResult } from "@/lib/types";
 import GlossaryEditor from "./components/GlossaryEditor";
 
 export default function Home() {
@@ -12,8 +12,12 @@ export default function Home() {
   const [transcriptionStatus, setTranscriptionStatus] =
     useState<TranscriptionStatus>("idle");
   const [progress, setProgress] = useState(0);
-  const [transcriptionResult, setTranscriptionResult] = useState<{
-    text: string;
+  const [transcriptionResult, setTranscriptionResult] =
+    useState<TranscriptionResult | null>(null);
+  const [correctionResult, setCorrectionResult] = useState<{
+    correctedText: string;
+    appliedRules: string;
+    otherCorrections: string;
   } | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +50,7 @@ export default function Home() {
     setTranscriptionStatus("transcribing");
     setProgress(0);
     setError(null);
+    setCorrectionResult(null);
 
     try {
       const formData = new FormData();
@@ -87,6 +92,7 @@ export default function Home() {
     }
 
     setError(null);
+    setTranscriptionStatus("correcting");
 
     try {
       const response = await fetch("/api/chatgpt", {
@@ -106,11 +112,22 @@ export default function Home() {
       }
 
       const result = await response.json();
-      setTranscriptionResult(result);
+      setCorrectionResult(result);
+
+      // 校正結果を新しいtranscriptionResultとして設定
+      if (transcriptionResult && result.correctedText) {
+        setTranscriptionResult({
+          text: result.correctedText,
+          timestamps: transcriptionResult.timestamps,
+        });
+      }
+
+      setTranscriptionStatus("completed");
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "校正中にエラーが発生しました";
       setError(errorMessage);
+      setTranscriptionStatus("error");
     }
   };
 
@@ -151,10 +168,32 @@ export default function Home() {
         )}
 
         {transcriptionResult && (
-          <TextEditor
-            transcriptionResult={transcriptionResult}
-            onSave={handleSave}
-          />
+          <>
+            <TextEditor
+              transcriptionResult={transcriptionResult}
+              onSave={handleSave}
+            />
+            {correctionResult && (
+              <div className="mt-4 space-y-4">
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-green-800 mb-2">
+                    適用された辞書ルール
+                  </h3>
+                  <pre className="whitespace-pre-wrap text-sm text-green-700">
+                    {correctionResult.appliedRules}
+                  </pre>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-blue-800 mb-2">
+                    その他の修正点
+                  </h3>
+                  <pre className="whitespace-pre-wrap text-sm text-blue-700">
+                    {correctionResult.otherCorrections}
+                  </pre>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 

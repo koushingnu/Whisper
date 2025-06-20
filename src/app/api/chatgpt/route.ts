@@ -22,6 +22,24 @@ async function loadDictionary() {
   }
 }
 
+// テキスト内の辞書ルールに該当する部分を強制的に置換
+function applyDictionaryRules(text: string, dictionary: DictionaryEntry[]) {
+  let modifiedText = text;
+  const appliedRules: string[] = [];
+
+  dictionary.forEach((entry) => {
+    if (!entry.incorrect || !entry.correct) return;
+
+    const regex = new RegExp(entry.incorrect, "g");
+    if (regex.test(modifiedText)) {
+      modifiedText = modifiedText.replace(regex, entry.correct);
+      appliedRules.push(`"${entry.incorrect}" → "${entry.correct}"`);
+    }
+  });
+
+  return { modifiedText, appliedRules };
+}
+
 function formatDictionaryRules(dictionary: DictionaryEntry[]) {
   if (dictionary.length === 0) return "";
 
@@ -36,13 +54,14 @@ function formatDictionaryRules(dictionary: DictionaryEntry[]) {
     {} as Record<string, DictionaryEntry[]>
   );
 
-  let rulesText = "以下の辞書ルールを必ず適用してください：\n\n";
+  let rulesText =
+    "以下の辞書ルールを必ず適用してください。これらは必須の変換ルールです：\n\n";
 
   // カテゴリーごとにルールを整形
   Object.entries(categorizedRules).forEach(([category, entries]) => {
     rulesText += `【${category}】\n`;
     entries.forEach((entry) => {
-      rulesText += `- "${entry.incorrect}" → "${entry.correct}"\n`;
+      rulesText += `- "${entry.incorrect}" は必ず "${entry.correct}" に変換してください\n`;
     });
     rulesText += "\n";
   });
@@ -62,8 +81,15 @@ export async function POST(request: NextRequest) {
     }
 
     const dictionary = await loadDictionary();
-    const dictionaryRules = formatDictionaryRules(dictionary);
 
+    // まず機械的に辞書ルールを適用
+    const { modifiedText, appliedRules } = applyDictionaryRules(
+      text,
+      dictionary
+    );
+
+    // ChatGPTによる追加の校正
+    const dictionaryRules = formatDictionaryRules(dictionary);
     const response = await openai.chat.completions.create({
       model: "gpt-4-turbo-preview",
       messages: [
@@ -72,12 +98,13 @@ export async function POST(request: NextRequest) {
           content: `あなたは高精度な日本語校正システムです。
 以下の優先順位で校正を行ってください：
 
-1. 辞書ルール
-- 提供される辞書ルールを最優先で適用
-- 部分一致も含めて確実に変換
-- カテゴリーごとの文脈を考慮
+1. 辞書ルール（最優先・必須）
+- 提供される辞書ルールは必ず適用してください
+- 部分一致も含めて、指定された表現は確実に変換してください
+- 変換漏れは重大な問題となります
+- 文脈に関係なく、指定された表現は必ず変換してください
 
-2. 文章の自然さ
+2. 文章の自然さ（辞書ルール適用後）
 - 句読点の位置の最適化
 - 助詞の適切な使用
 - 敬語の統一性
@@ -88,29 +115,43 @@ export async function POST(request: NextRequest) {
 - インデントの統一
 - スペースの統一
 
-変換後は以下を出力してください：
-1. 変換したテキスト
+出力形式：
+1. 校正後のテキスト
 2. 適用した辞書ルールの一覧（どのルールを適用したか）
-3. その他の修正点の要約`,
+3. その他の修正点の要約
+
+注意：辞書ルールの適用は必須です。変換漏れがないか、最後に必ず確認してください。`,
         },
         {
           role: "user",
-          content:
-            dictionaryRules + "以下のテキストを校正してください：\n\n" + text,
+          content: `${dictionaryRules}\n\n以下のテキストを校正してください。既に一部の辞書ルールが適用されている可能性がありますが、漏れがないか確認してください：\n\n${modifiedText}`,
         },
       ],
-      temperature: 0.3, // より決定論的な出力に
+      temperature: 0.1, // より決定論的な出力に
     });
 
-    // レスポンスをパースして構造化
+    // ChatGPTの出力を解析
     const content = response.choices[0].message.content || "";
     const sections = content.split(/\n{2,}/);
 
+    // 最終的な校正結果
+    const correctedText = sections[0] || modifiedText;
+    const chatGPTAppliedRules =
+      sections[1] || "ChatGPTによる追加の辞書ルール適用はありません";
+    const otherCorrections = sections[2] || "その他の修正はありません";
+
+    // 機械的な適用とChatGPTの適用を組み合わせた結果を返す
     return new Response(
       JSON.stringify({
-        correctedText: sections[0], // 最初のセクションが校正済みテキスト
-        appliedRules: sections[1] || "適用された辞書ルールはありません",
-        otherCorrections: sections[2] || "その他の修正はありません",
+        correctedText,
+        appliedRules: [
+          "【自動適用されたルール】",
+          ...appliedRules,
+          "",
+          "【ChatGPTが確認・適用したルール】",
+          chatGPTAppliedRules,
+        ].join("\n"),
+        otherCorrections,
       }),
       { status: 200 }
     );
