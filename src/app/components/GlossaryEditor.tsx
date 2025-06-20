@@ -42,7 +42,11 @@ export default function GlossaryEditor({ onSave }: GlossaryEditorProps) {
 
       // カテゴリー一覧を更新
       const uniqueCategories = Array.from(
-        new Set(data.map((term: GlossaryTerm) => term.category).filter(Boolean))
+        new Set(
+          data
+            .map((term: GlossaryTerm) => term.category)
+            .filter((category): category is string => Boolean(category))
+        )
       );
       setCategories(uniqueCategories);
     } catch (error) {
