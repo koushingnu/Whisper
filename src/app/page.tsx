@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { FileUploader } from "./components/FileUploader";
 import { ProgressBar } from "./components/ProgressBar";
 import { TextEditor } from "./components/TextEditor";
@@ -15,8 +15,27 @@ export default function Home() {
   const [transcriptionResult, setTranscriptionResult] = useState<{
     text: string;
   } | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  // 認証状態を確認
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const response = await fetch("/api/glossary");
+        setIsAuthenticated(response.ok);
+      } catch (error) {
+        setIsAuthenticated(false);
+      }
+    };
+    checkAuth();
+  }, []);
 
   const handleFileSelect = async (file: File) => {
+    if (!isAuthenticated) {
+      window.location.href = "/login";
+      return;
+    }
+
     setIsProcessing(true);
     setTranscriptionStatus("transcribing");
     setProgress(0);
@@ -31,6 +50,10 @@ export default function Home() {
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          window.location.href = "/login";
+          return;
+        }
         throw new Error("Transcription failed");
       }
 
@@ -47,6 +70,11 @@ export default function Home() {
   };
 
   const handleSave = async (text: string) => {
+    if (!isAuthenticated) {
+      window.location.href = "/login";
+      return;
+    }
+
     try {
       const response = await fetch("/api/chatgpt", {
         method: "POST",
@@ -57,6 +85,10 @@ export default function Home() {
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          window.location.href = "/login";
+          return;
+        }
         throw new Error("Correction failed");
       }
 
@@ -72,9 +104,25 @@ export default function Home() {
       <h1 className="text-3xl font-bold mb-8">音声文字起こし＆校正アプリ</h1>
 
       <div className="space-y-8">
+        {!isAuthenticated && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+            <p className="text-yellow-800">
+              文字起こしを開始するには
+              <a
+                href="/login"
+                className="text-blue-600 hover:text-blue-800 underline"
+              >
+                ログイン
+              </a>
+              が必要です
+            </p>
+          </div>
+        )}
+
         <FileUploader
           onFileSelect={handleFileSelect}
           isProcessing={isProcessing}
+          isAuthenticated={isAuthenticated}
         />
 
         {transcriptionStatus !== "idle" && (

@@ -3,13 +3,17 @@
 import React, { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 
+interface FileUploaderProps {
+  onFileSelect: (file: File) => void;
+  isProcessing: boolean;
+  isAuthenticated: boolean;
+}
+
 export function FileUploader({
   onFileSelect,
   isProcessing,
-}: {
-  onFileSelect: (file: File) => void;
-  isProcessing: boolean;
-}) {
+  isAuthenticated,
+}: FileUploaderProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const onDrop = useCallback(
@@ -31,7 +35,7 @@ export function FileUploader({
       "audio/x-m4a": [".m4a"],
     },
     maxFiles: 1,
-    disabled: isProcessing,
+    disabled: isProcessing || !isAuthenticated,
   });
 
   return (
@@ -41,19 +45,48 @@ export function FileUploader({
         border-2 border-dashed rounded-lg p-8 text-center
         transition-colors duration-200 ease-in-out
         ${
-          isProcessing
-            ? "border-gray-300 bg-gray-100 cursor-not-allowed"
-            : isDragActive
-              ? "border-blue-500 bg-blue-50 cursor-pointer"
-              : selectedFile
-                ? "border-green-500 bg-green-50 cursor-pointer"
-                : "border-gray-300 hover:border-blue-400 hover:bg-gray-50 cursor-pointer"
+          !isAuthenticated
+            ? "border-gray-300 bg-gray-100 cursor-not-allowed opacity-50"
+            : isProcessing
+              ? "border-gray-300 bg-gray-100 cursor-not-allowed"
+              : isDragActive
+                ? "border-blue-500 bg-blue-50 cursor-pointer"
+                : selectedFile
+                  ? "border-green-500 bg-green-50 cursor-pointer"
+                  : "border-gray-300 hover:border-blue-400 hover:bg-gray-50 cursor-pointer"
         }
       `}
     >
       <input {...getInputProps()} />
       <div className="space-y-4">
-        {isProcessing ? (
+        {!isAuthenticated ? (
+          <>
+            <div className="flex justify-center">
+              <svg
+                className="w-12 h-12 text-gray-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 15v2m0 0v2m0-2h2m-2 0H9m3-12a9 9 0 110 18 9 9 0 010-18z"
+                />
+              </svg>
+            </div>
+            <div>
+              <p className="text-lg font-medium text-gray-700">
+                ログインが必要です
+              </p>
+              <p className="text-sm text-gray-500 mt-2">
+                文字起こしを開始するにはログインしてください
+              </p>
+            </div>
+          </>
+        ) : isProcessing ? (
           <>
             <div className="flex justify-center">
               <svg
