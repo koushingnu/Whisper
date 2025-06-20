@@ -53,7 +53,7 @@ export default function GlossaryEditor({ onSave }: GlossaryEditorProps) {
   // 初回読み込み時に用語一覧を取得
   useEffect(() => {
     fetchTerms();
-  }, [searchQuery, selectedCategory]);
+  }, [searchQuery, selectedCategory, fetchTerms]);
 
   // 新しい用語を追加
   const handleSubmit = async (e: React.FormEvent) => {

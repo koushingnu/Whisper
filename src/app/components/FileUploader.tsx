@@ -2,7 +2,7 @@
 
 import React, { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
-import { formatBytes } from "@/lib/utils";
+import { TranscriptionStatus } from "@/lib/types";
 
 interface FileUploaderProps {
   onFileSelect: (file: File) => void;

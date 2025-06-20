@@ -24,7 +24,7 @@ export default function LoginPage() {
       } else {
         setError("パスワードが正しくありません");
       }
-    } catch (error) {
+    } catch {
       setError("ログインに失敗しました");
     }
   };

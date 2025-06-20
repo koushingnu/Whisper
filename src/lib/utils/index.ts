@@ -1,6 +1,5 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-import * as diff from "diff";
 import { DictionaryEntry } from "../types";
 
 export function cn(...inputs: ClassValue[]) {
@@ -81,8 +80,6 @@ export function extractDictionaryEntries(
 
     // 記号は無視
     if (/^[\s\p{P}]+$/u.test(originalToken)) continue;
-
-    let bestMatch: { token: string; similarity: number } | null = null;
 
     // より広い範囲で検索
     for (

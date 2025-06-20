@@ -7,25 +7,22 @@ import { TranscriptionStatus } from "@/lib/types";
 
 interface ProgressBarProps {
   status: TranscriptionStatus;
+  progress: number;
 }
 
-export function ProgressBar({ status }: ProgressBarProps) {
+export function ProgressBar({ status, progress }: ProgressBarProps) {
   return (
-    <div className="w-full space-y-2">
-      <Progress.Root
-        className="relative h-4 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800"
-        style={{
-          transform: "translateZ(0)",
-        }}
-        value={status.progress}
-      >
-        <Progress.Indicator
-          className="h-full w-full bg-blue-500 transition-transform duration-500"
-          style={{ transform: `translateX(-${100 - status.progress}%)` }}
+    <div className="w-full">
+      <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+        <div
+          className="h-full bg-blue-600 transition-all duration-500"
+          style={{ width: `${progress}%` }}
         />
-      </Progress.Root>
-      <div className="text-sm text-gray-600 dark:text-gray-400">
-        {status.message}
+      </div>
+      <div className="mt-2 text-sm text-gray-600 text-center">
+        {status === "transcribing" && "文字起こし中..."}
+        {status === "correcting" && "校正中..."}
+        {status === "completed" && "完了"}
       </div>
     </div>
   );

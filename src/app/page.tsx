@@ -8,102 +8,62 @@ import { TranscriptionStatus } from "@/lib/types";
 import GlossaryEditor from "./components/GlossaryEditor";
 
 export default function Home() {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [status, setStatus] = useState<TranscriptionStatus>({
-    status: "idle",
-    progress: 0,
-    message: "音声ファイルを選択してください",
-  });
-  const [correctedText, setCorrectedText] = useState("");
-  const [timestamps, setTimestamps] = useState<
-    { start: number; end: number }[]
-  >([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [originalText, setOriginalText] = useState("");
+  const [transcriptionStatus, setTranscriptionStatus] =
+    useState<TranscriptionStatus>("idle");
+  const [progress, setProgress] = useState(0);
+  const [transcriptionResult, setTranscriptionResult] = useState<{
+    text: string;
+  } | null>(null);
 
-  const handleFileSelect = (file: File) => {
-    setSelectedFile(file);
-    setStatus({
-      status: "idle",
-      progress: 0,
-      message: "ファイルが選択されました",
-    });
-  };
-
-  const handleTranscribe = async () => {
-    if (!selectedFile || isProcessing) return;
+  const handleFileSelect = async (file: File) => {
+    setIsProcessing(true);
+    setTranscriptionStatus("transcribing");
+    setProgress(0);
 
     try {
-      setIsProcessing(true);
-
-      // アップロード開始
-      setStatus({
-        status: "uploading",
-        progress: 20,
-        message: "ファイルをアップロード中...",
-      });
-
       const formData = new FormData();
-      formData.append("file", selectedFile);
+      formData.append("file", file);
 
-      // Whisper APIで文字起こし
-      setStatus({
-        status: "transcribing",
-        progress: 40,
-        message: "文字起こし中...",
-      });
-
-      const transcribeResponse = await fetch("/api/transcribe", {
+      const response = await fetch("/api/transcribe", {
         method: "POST",
         body: formData,
       });
 
-      if (!transcribeResponse.ok) {
-        throw new Error("文字起こしに失敗しました");
+      if (!response.ok) {
+        throw new Error("Transcription failed");
       }
 
-      const transcribeData = await transcribeResponse.json();
-      setOriginalText(transcribeData.text);
-      setTimestamps(transcribeData.timestamps || []);
+      const result = await response.json();
+      setTranscriptionResult(result);
+      setTranscriptionStatus("completed");
+      setProgress(100);
+    } catch (error) {
+      console.error("Error:", error);
+      setTranscriptionStatus("error");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
-      // ChatGPTで校正
-      setStatus({
-        status: "correcting",
-        progress: 70,
-        message: "辞書を使用して校正中...",
-      });
-
-      const correctResponse = await fetch("/api/chatgpt", {
+  const handleSave = async (text: string) => {
+    try {
+      const response = await fetch("/api/chatgpt", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          text: transcribeData.text,
-        }),
+        body: JSON.stringify({ text }),
       });
 
-      if (!correctResponse.ok) {
-        throw new Error("校正に失敗しました");
+      if (!response.ok) {
+        throw new Error("Correction failed");
       }
 
-      const correctedData = await correctResponse.json();
-      setCorrectedText(correctedData.text);
-
-      // 完了
-      setStatus({
-        status: "completed",
-        progress: 100,
-        message: "文字起こしと校正が完了しました",
-      });
+      const result = await response.json();
+      setTranscriptionResult(result);
     } catch (error) {
-      setStatus({
-        status: "error",
-        progress: 0,
-        message: `エラーが発生しました: ${error instanceof Error ? error.message : "不明なエラー"}`,
-      });
-    } finally {
-      setIsProcessing(false);
+      console.error("Error:", error);
     }
   };
 
@@ -117,27 +77,14 @@ export default function Home() {
           isProcessing={isProcessing}
         />
 
-        {selectedFile && (
-          <button
-            onClick={handleTranscribe}
-            className={`w-full py-2 text-white rounded-md transition-colors ${
-              isProcessing
-                ? "bg-gray-400 cursor-not-allowed"
-                : "bg-blue-500 hover:bg-blue-600"
-            }`}
-            disabled={isProcessing}
-          >
-            {isProcessing ? "処理中..." : "文字起こし開始"}
-          </button>
+        {transcriptionStatus !== "idle" && (
+          <ProgressBar status={transcriptionStatus} progress={progress} />
         )}
 
-        {status.status !== "idle" && <ProgressBar status={status} />}
-
-        {status.status === "completed" && (
+        {transcriptionResult && (
           <TextEditor
-            correctedText={correctedText}
-            timestamps={timestamps}
-            onCorrectedTextChange={setCorrectedText}
+            transcriptionResult={transcriptionResult}
+            onSave={handleSave}
           />
         )}
       </div>
