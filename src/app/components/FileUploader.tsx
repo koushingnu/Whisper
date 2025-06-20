@@ -10,7 +10,6 @@ export function FileUploader({
   onFileSelect: (file: File) => void;
   isProcessing: boolean;
 }) {
-  const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const onDrop = useCallback(
