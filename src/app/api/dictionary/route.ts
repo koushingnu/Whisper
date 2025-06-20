@@ -1,21 +1,19 @@
 import { NextRequest } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { extractDictionaryEntries } from "@/lib/utils";
 import { DictionaryEntry } from "@/lib/types";
 
 // 辞書エントリーを追加する関数
-async function addDictionaryEntries(entries: DictionaryEntry[]) {
-  console.log("Adding entries to Supabase:", entries);
+async function addDictionaryEntry(entry: Partial<DictionaryEntry>) {
+  console.log("Adding entry to Supabase:", entry);
 
   const { data, error } = await supabase
     .from("dictionary")
-    .insert(
-      entries.map((entry) => ({
-        incorrect: entry.incorrect,
-        correct: entry.correct,
-        created_at: new Date().toISOString(),
-      }))
-    )
+    .insert({
+      incorrect: entry.incorrect,
+      correct: entry.correct,
+      category: entry.category,
+      created_at: new Date().toISOString(),
+    })
     .select();
 
   if (error) {
@@ -23,19 +21,18 @@ async function addDictionaryEntries(entries: DictionaryEntry[]) {
     throw error;
   }
 
-  console.log("Successfully added entries:", data);
+  console.log("Successfully added entry:", data);
   return data;
 }
 
 // 既存のエントリーをチェックする関数
-async function checkExistingEntries(entries: DictionaryEntry[]) {
-  const incorrectTexts = entries.map((e) => e.incorrect);
-  console.log("Checking existing entries for:", incorrectTexts);
+async function checkExistingEntry(entry: Partial<DictionaryEntry>) {
+  console.log("Checking existing entry for:", entry.incorrect);
 
   const { data: existingEntries, error } = await supabase
     .from("dictionary")
     .select("incorrect, correct")
-    .in("incorrect", incorrectTexts);
+    .eq("incorrect", entry.incorrect);
 
   if (error) {
     console.error("Supabase select error:", error);
@@ -43,50 +40,41 @@ async function checkExistingEntries(entries: DictionaryEntry[]) {
   }
 
   console.log("Found existing entries:", existingEntries);
-
-  // 既存のエントリーを除外
-  const uniqueEntries = entries.filter(
-    (entry) =>
-      !existingEntries?.some(
-        (existing) =>
-          existing.incorrect === entry.incorrect &&
-          existing.correct === entry.correct
-      )
-  );
-
-  console.log("Unique entries to be added:", uniqueEntries);
-  return uniqueEntries;
+  return existingEntries;
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const { originalText, correctedText } = await request.json();
-    console.log("Received texts:", { originalText, correctedText });
+    const entry = await request.json();
+    console.log("Received entry:", entry);
 
-    if (!originalText || !correctedText) {
+    if (!entry.incorrect || !entry.correct) {
       return new Response(
-        JSON.stringify({ error: "元のテキストと修正後のテキストが必要です" }),
+        JSON.stringify({
+          error: "変換前のテキストと変換後のテキストが必要です",
+        }),
         { status: 400 }
       );
     }
 
-    // 差分を抽出
-    const newEntries = extractDictionaryEntries(originalText, correctedText);
-    console.log("Extracted entries:", newEntries);
-
     // 既存のエントリーをチェック
-    const uniqueEntries = await checkExistingEntries(newEntries);
+    const existingEntries = await checkExistingEntry(entry);
 
-    let addedEntries = [];
-    if (uniqueEntries.length > 0) {
-      // 新しいエントリーを追加
-      addedEntries = await addDictionaryEntries(uniqueEntries);
+    // 同じ incorrect と correct の組み合わせが存在する場合はエラー
+    if (existingEntries?.some((e) => e.correct === entry.correct)) {
+      return new Response(
+        JSON.stringify({ error: "同じ変換ルールが既に存在します" }),
+        { status: 400 }
+      );
     }
+
+    // 新しいエントリーを追加
+    const addedEntry = await addDictionaryEntry(entry);
 
     return new Response(
       JSON.stringify({
         message: "辞書を更新しました",
-        addedEntries: addedEntries,
+        addedEntry: addedEntry,
       }),
       { status: 200 }
     );

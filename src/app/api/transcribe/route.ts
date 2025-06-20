@@ -5,6 +5,8 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -15,6 +17,21 @@ export async function POST(request: NextRequest) {
         JSON.stringify({ error: "ファイルが見つかりません" }),
         {
           status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // ファイルサイズチェック
+    if (audioFile.size > MAX_FILE_SIZE) {
+      return new Response(
+        JSON.stringify({
+          error: "ファイルサイズが大きすぎます",
+          details: "ファイルサイズは25MB以下にしてください",
+        }),
+        {
+          status: 413,
+          headers: { "Content-Type": "application/json" },
         }
       );
     }
@@ -40,7 +57,10 @@ export async function POST(request: NextRequest) {
         text: response.text,
         timestamps: timestamps,
       }),
-      { status: 200 }
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }
     );
   } catch (error) {
     console.error("Whisper API error:", error);
@@ -49,7 +69,10 @@ export async function POST(request: NextRequest) {
         error: "文字起こし処理中にエラーが発生しました",
         details: error instanceof Error ? error.message : String(error),
       }),
-      { status: 500 }
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }
     );
   }
 }
