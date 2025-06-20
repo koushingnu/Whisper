@@ -14,15 +14,14 @@ export async function POST(request: NextRequest) {
 
     if (password === process.env.APP_PASSWORD) {
       // セッションクッキーを設定
-      const cookieStore = cookies();
-      await cookieStore.set("auth", "true", {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 60 * 60 * 24 * 7, // 1週間
+      const response = new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: {
+          "Set-Cookie": `auth=true; HttpOnly; Secure=${process.env.NODE_ENV === "production"}; SameSite=Lax; Max-Age=${60 * 60 * 24 * 7}; Path=/`,
+        },
       });
 
-      return new Response(JSON.stringify({ success: true }), { status: 200 });
+      return response;
     }
 
     return new Response(JSON.stringify({ error: "Invalid password" }), {
