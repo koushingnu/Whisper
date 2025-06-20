@@ -14,7 +14,8 @@ export async function POST(request: NextRequest) {
 
     if (password === process.env.APP_PASSWORD) {
       // セッションクッキーを設定
-      cookies().set("auth", "true", {
+      const cookieStore = cookies();
+      await cookieStore.set("auth", "true", {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
