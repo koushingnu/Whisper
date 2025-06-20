@@ -41,14 +41,14 @@ export default function GlossaryEditor({ onSave }: GlossaryEditorProps) {
       setTerms(data);
 
       // カテゴリー一覧を更新
-      const uniqueCategories = Array.from(
-        new Set(
-          data
-            .map((term: GlossaryTerm) => term.category)
-            .filter((category: string | undefined): category is string =>
-              Boolean(category)
-            )
-        )
+      const categories = data
+        .map((term: GlossaryTerm) => term.category)
+        .filter((category: string | undefined): category is string =>
+          Boolean(category)
+        );
+
+      const uniqueCategories: string[] = Array.from(
+        new Set<string>(categories)
       );
       setCategories(uniqueCategories);
     } catch (error) {
