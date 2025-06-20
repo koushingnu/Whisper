@@ -9,10 +9,12 @@ const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
 
 export async function POST(request: NextRequest) {
   try {
+    console.log("Transcription request received");
     const formData = await request.formData();
-    const audioFile = formData.get("file") as Blob;
+    const audioFile = formData.get("file");
 
-    if (!audioFile) {
+    if (!audioFile || !(audioFile instanceof File)) {
+      console.error("No file found in request or invalid file type");
       return new Response(
         JSON.stringify({ error: "ファイルが見つかりません" }),
         {
@@ -22,8 +24,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.log("File received:", {
+      type: audioFile.type,
+      size: audioFile.size,
+      name: audioFile.name,
+    });
+
     // ファイルサイズチェック
     if (audioFile.size > MAX_FILE_SIZE) {
+      console.error("File size exceeds limit:", audioFile.size);
       return new Response(
         JSON.stringify({
           error: "ファイルサイズが大きすぎます",
@@ -36,7 +45,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // OpenAI APIにファイルを直接送信
+    console.log("Sending request to Whisper API");
+    // OpenAI APIにファイルを送信
     const response = await openai.audio.transcriptions.create({
       file: audioFile,
       model: "whisper-1",
@@ -45,6 +55,7 @@ export async function POST(request: NextRequest) {
       timestamp_granularities: ["segment"],
     });
 
+    console.log("Whisper API response received");
     // レスポンスからタイムスタンプ情報を抽出
     const segments = response.segments || [];
     const timestamps = segments.map((segment) => ({
@@ -52,6 +63,7 @@ export async function POST(request: NextRequest) {
       end: segment.end,
     }));
 
+    console.log("Processing completed successfully");
     return new Response(
       JSON.stringify({
         text: response.text,
@@ -64,10 +76,21 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     console.error("Whisper API error:", error);
+    // エラーの詳細情報を取得
+    const errorDetails =
+      error instanceof Error
+        ? {
+            message: error.message,
+            name: error.name,
+            stack: error.stack,
+          }
+        : String(error);
+
+    console.error("Error details:", errorDetails);
     return new Response(
       JSON.stringify({
         error: "文字起こし処理中にエラーが発生しました",
-        details: error instanceof Error ? error.message : String(error),
+        details: errorDetails,
       }),
       {
         status: 500,

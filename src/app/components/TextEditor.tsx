@@ -30,52 +30,41 @@ export function TextEditor({ transcriptionResult, onSave }: TextEditorProps) {
     let lastEnd = 0;
     let textStartIndex = 0;
 
+    // 文章を分割（。！？で区切る）
+    const sentences = text.match(/[^。！？]+[。！？]?/g) || [text];
+    let currentSentenceIndex = 0;
+
     for (let i = 0; i < rawSegments.length; i++) {
       const segment = rawSegments[i];
 
-      // 現在のセグメントのテキストを取得
-      let segmentText = "";
-      if (i < rawSegments.length - 1) {
-        const nextSegmentStart = text.indexOf(" ", textStartIndex);
-        segmentText = text.slice(
-          textStartIndex,
-          nextSegmentStart > -1 ? nextSegmentStart : undefined
-        );
-        textStartIndex =
-          nextSegmentStart > -1 ? nextSegmentStart + 1 : text.length;
-      } else {
-        segmentText = text.slice(textStartIndex);
-      }
+      // 現在の文を取得
+      if (currentSentenceIndex < sentences.length) {
+        const sentence = sentences[currentSentenceIndex].trim();
 
-      // 最初のセグメントまたは時間が離れている場合は新しいセグメントを開始
-      if (newSegments.length === 0 || segment.start - lastEnd > 1.0) {
-        if (currentText) {
-          newSegments.push({
-            text: currentText.trim(),
-            start: currentStart,
-            end: lastEnd,
-          });
+        // 新しいセグメントを開始する条件
+        if (
+          newSegments.length === 0 || // 最初のセグメント
+          segment.start - lastEnd > 1.0 || // 時間が離れている
+          currentText.length > 100 || // テキストが長くなりすぎている
+          sentence.endsWith("。") || // 文末
+          sentence.endsWith("！") ||
+          sentence.endsWith("？")
+        ) {
+          if (currentText) {
+            newSegments.push({
+              text: currentText.trim(),
+              start: currentStart,
+              end: lastEnd,
+            });
+          }
+          currentText = sentence;
+          currentStart = segment.start;
+        } else {
+          currentText += sentence;
         }
-        currentText = segmentText;
-        currentStart = segment.start;
-      } else {
-        currentText += " " + segmentText;
-      }
-      lastEnd = segment.end;
 
-      // 文の区切りに達した場合はセグメントを確定
-      if (
-        currentText.includes("。") ||
-        currentText.includes("！") ||
-        currentText.includes("？")
-      ) {
-        newSegments.push({
-          text: currentText.trim(),
-          start: currentStart,
-          end: lastEnd,
-        });
-        currentText = "";
-        currentStart = lastEnd;
+        lastEnd = segment.end;
+        currentSentenceIndex++;
       }
     }
 
@@ -93,6 +82,8 @@ export function TextEditor({ transcriptionResult, onSave }: TextEditorProps) {
 
   // 文字起こし結果をセグメントに分割
   useEffect(() => {
+    if (!transcriptionResult?.text) return;
+
     const mergedSegments = mergeSegments(
       transcriptionResult.timestamps,
       transcriptionResult.text
@@ -154,12 +145,16 @@ export function TextEditor({ transcriptionResult, onSave }: TextEditorProps) {
         {segments.map((segment, index) => (
           <div
             key={index}
-            className="mb-4 p-2 hover:bg-gray-50 border-b last:border-b-0"
+            className="mb-4 p-3 hover:bg-gray-50 border-b last:border-b-0 relative"
           >
-            <span className="text-sm text-gray-500 mr-2 whitespace-nowrap">
-              [{formatTime(segment.start)} - {formatTime(segment.end)}]
-            </span>
-            <span className="text-gray-900 block mt-1">{segment.text}</span>
+            <div className="flex items-start gap-3">
+              <span className="text-sm text-gray-500 whitespace-nowrap bg-gray-100 px-2 py-1 rounded">
+                {formatTime(segment.start)} - {formatTime(segment.end)}
+              </span>
+              <span className="text-gray-900 flex-1 leading-relaxed">
+                {segment.text}
+              </span>
+            </div>
           </div>
         ))}
       </div>
@@ -221,13 +216,13 @@ export function TextEditor({ transcriptionResult, onSave }: TextEditorProps) {
                 <button
                   type="button"
                   onClick={() => setShowDictionaryForm(false)}
-                  className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
                 >
                   キャンセル
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
                 >
                   登録
                 </button>
@@ -236,15 +231,6 @@ export function TextEditor({ transcriptionResult, onSave }: TextEditorProps) {
           </div>
         </div>
       )}
-
-      <div className="flex justify-between">
-        <button
-          onClick={handleSave}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
-          保存
-        </button>
-      </div>
     </div>
   );
 }

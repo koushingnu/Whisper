@@ -51,6 +51,7 @@ export default function Home() {
     setProgress(0);
     setError(null);
     setCorrectionResult(null);
+    setTranscriptionResult(null);
 
     try {
       const formData = new FormData();
@@ -70,15 +71,49 @@ export default function Home() {
       }
 
       const result = await response.json();
-      setTranscriptionResult(result);
-      setTranscriptionStatus("completed");
-      setProgress(100);
+      setProgress(50);
+      setTranscriptionStatus("correcting");
+
+      // 文字起こし完了後、自動的に校正を実行
+      try {
+        const correctionResponse = await fetch("/api/chatgpt", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ text: result.text }),
+        });
+
+        if (correctionResponse.ok) {
+          const correctionResult = await correctionResponse.json();
+          setCorrectionResult(correctionResult);
+          // 校正結果を新しいtranscriptionResultとして設定
+          setTranscriptionResult({
+            text: correctionResult.correctedText,
+            timestamps: result.timestamps,
+          });
+        } else {
+          throw new Error("校正に失敗しました");
+        }
+
+        setTranscriptionStatus("completed");
+        setProgress(100);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "校正中にエラーが発生しました";
+        setError(errorMessage);
+        console.error("校正処理中にエラーが発生しました:", error);
+        setTranscriptionStatus("error");
+      }
     } catch (error) {
       const errorMessage =
         error instanceof Error
           ? error.message
           : "文字起こし中にエラーが発生しました";
       setError(errorMessage);
+      console.error("文字起こし中にエラーが発生しました:", error);
       setTranscriptionStatus("error");
     } finally {
       setIsProcessing(false);
@@ -127,6 +162,7 @@ export default function Home() {
       const errorMessage =
         error instanceof Error ? error.message : "校正中にエラーが発生しました";
       setError(errorMessage);
+      console.error("校正中にエラーが発生しました:", error);
       setTranscriptionStatus("error");
     }
   };
