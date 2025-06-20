@@ -46,8 +46,15 @@ function areSimilarTokens(token1: string, token2: string): boolean {
   if (/^[\s\p{P}]+$/u.test(token1) || /^[\s\p{P}]+$/u.test(token2))
     return false;
 
-  // 長すぎるトークンは除外
-  if (token1.length > 10 || token2.length > 10) return false;
+  // 数値を含む場合は特別な処理
+  const hasNumbers = /\d/.test(token1) || /\d/.test(token2);
+  if (hasNumbers) {
+    // 両方とも数値を含む場合は、異なる値であれば差分として検出
+    if (/\d/.test(token1) && /\d/.test(token2)) {
+      return true;
+    }
+    return false;
+  }
 
   // 短すぎるトークンは除外
   if (token1.length < 2 || token2.length < 2) return false;
@@ -55,7 +62,7 @@ function areSimilarTokens(token1: string, token2: string): boolean {
   // 編集距離が近いものを類似とみなす
   const maxLength = Math.max(token1.length, token2.length);
   const distance = levenshteinDistance(token1, token2);
-  return distance <= Math.min(2, maxLength * 0.4); // 40%以下の編集距離なら類似と判定
+  return distance <= Math.min(3, maxLength * 0.5); // 50%以下の編集距離なら類似と判定
 }
 
 // 2つのテキスト間の差分を抽出する関数
@@ -66,6 +73,7 @@ export function extractDictionaryEntries(
   const originalTokens = tokenize(originalText);
   const correctedTokens = tokenize(correctedText);
   const entries: DictionaryEntry[] = [];
+  const processedPairs = new Set<string>();
 
   // 各トークンについて、最も似ているトークンを探す
   for (let i = 0; i < originalTokens.length; i++) {
@@ -74,28 +82,26 @@ export function extractDictionaryEntries(
     // 記号は無視
     if (/^[\s\p{P}]+$/u.test(originalToken)) continue;
 
+    let bestMatch: { token: string; similarity: number } | null = null;
+
+    // より広い範囲で検索
     for (
-      let j = Math.max(0, i - 2);
-      j < Math.min(correctedTokens.length, i + 3);
+      let j = Math.max(0, i - 3);
+      j < Math.min(correctedTokens.length, i + 4);
       j++
     ) {
       const correctedToken = correctedTokens[j];
 
       if (areSimilarTokens(originalToken, correctedToken)) {
-        // 前後のトークンも含めてコンテキストをチェック
-        const prevOriginal = originalTokens[i - 1] || "";
-        const nextOriginal = originalTokens[i + 1] || "";
-        const prevCorrected = correctedTokens[j - 1] || "";
-        const nextCorrected = correctedTokens[j + 1] || "";
-
-        // 前後のコンテキストが大きく異なる場合は除外
-        if (prevOriginal !== prevCorrected && nextOriginal !== nextCorrected)
-          continue;
+        // 重複チェック
+        const pairKey = `${originalToken}-${correctedToken}`;
+        if (processedPairs.has(pairKey)) continue;
 
         entries.push({
           incorrect: originalToken,
           correct: correctedToken,
         });
+        processedPairs.add(pairKey);
         break;
       }
     }
