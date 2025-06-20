@@ -16,6 +16,7 @@ export type TranscriptionStatus =
 
 export interface ApiResponse {
   success: boolean;
-  data?: any;
+  message?: string;
   error?: string;
+  data?: unknown;
 }

@@ -2,29 +2,26 @@
 
 import React, { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
-import { TranscriptionStatus } from "@/lib/types";
-
-interface FileUploaderProps {
-  onFileSelect: (file: File) => void;
-  isProcessing: boolean;
-}
 
 export function FileUploader({
   onFileSelect,
   isProcessing,
-}: FileUploaderProps) {
+}: {
+  onFileSelect: (file: File) => void;
+  isProcessing: boolean;
+}) {
+  const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
-      if (isProcessing) return;
-      const file = acceptedFiles[0];
-      if (file) {
+      if (acceptedFiles.length > 0) {
+        const file = acceptedFiles[0];
         setSelectedFile(file);
         onFileSelect(file);
       }
     },
-    [onFileSelect, isProcessing]
+    [onFileSelect]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
