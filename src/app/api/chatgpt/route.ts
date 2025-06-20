@@ -27,13 +27,37 @@ function applyDictionaryRules(text: string, dictionary: DictionaryEntry[]) {
   let modifiedText = text;
   const appliedRules: string[] = [];
 
-  dictionary.forEach((entry) => {
+  // 長い文字列から先に置換するようにソート
+  const sortedDictionary = [...dictionary].sort(
+    (a, b) => (b.incorrect?.length || 0) - (a.incorrect?.length || 0)
+  );
+
+  sortedDictionary.forEach((entry) => {
     if (!entry.incorrect || !entry.correct) return;
 
-    const regex = new RegExp(entry.incorrect, "g");
-    if (regex.test(modifiedText)) {
-      modifiedText = modifiedText.replace(regex, entry.correct);
-      appliedRules.push(`"${entry.incorrect}" → "${entry.correct}"`);
+    // 特殊文字をエスケープ
+    const escapedIncorrect = entry.incorrect.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      "\\$&"
+    );
+
+    // 単語境界を考慮した正規表現パターン
+    const pattern = new RegExp(
+      `(^|[\\s、。！？」』])${escapedIncorrect}($|[\\s、。！？「『])`,
+      "g"
+    );
+
+    // マッチした部分を置換しながらカウント
+    let count = 0;
+    modifiedText = modifiedText.replace(pattern, (match, prefix, suffix) => {
+      count++;
+      return `${prefix}${entry.correct}${suffix}`;
+    });
+
+    if (count > 0) {
+      appliedRules.push(
+        `"${entry.incorrect}" → "${entry.correct}" (${count}箇所)`
+      );
     }
   });
 
@@ -61,10 +85,18 @@ function formatDictionaryRules(dictionary: DictionaryEntry[]) {
   Object.entries(categorizedRules).forEach(([category, entries]) => {
     rulesText += `【${category}】\n`;
     entries.forEach((entry) => {
-      rulesText += `- "${entry.incorrect}" は必ず "${entry.correct}" に変換してください\n`;
+      // より具体的な指示を追加
+      rulesText += `- "${entry.incorrect}" は必ず "${entry.correct}" に変換してください（単語の一部分一致は避け、完全一致のみ変換）\n`;
     });
     rulesText += "\n";
   });
+
+  rulesText += "注意事項：\n";
+  rulesText += "1. 上記の変換は文脈に関係なく必ず行ってください\n";
+  rulesText +=
+    "2. 変換は完全一致で行い、単語の一部だけの変換は避けてください\n";
+  rulesText +=
+    "3. 変換後のテキストを必ず確認し、すべてのルールが適用されているか確認してください\n";
 
   return rulesText;
 }
@@ -100,9 +132,10 @@ export async function POST(request: NextRequest) {
 
 1. 辞書ルール（最優先・必須）
 - 提供される辞書ルールは必ず適用してください
-- 部分一致も含めて、指定された表現は確実に変換してください
+- 完全一致での変換を行い、単語の一部分のみの変換は避けてください
 - 変換漏れは重大な問題となります
 - 文脈に関係なく、指定された表現は必ず変換してください
+- 変換後、必ずすべてのルールが適用されているか確認してください
 
 2. 文章の自然さ（辞書ルール適用後）
 - 句読点の位置の最適化
@@ -117,14 +150,15 @@ export async function POST(request: NextRequest) {
 
 出力形式：
 1. 校正後のテキスト
-2. 適用した辞書ルールの一覧（どのルールを適用したか）
+2. 適用した辞書ルールの一覧（どのルールを適用したか、何箇所変換したか）
 3. その他の修正点の要約
 
-注意：辞書ルールの適用は必須です。変換漏れがないか、最後に必ず確認してください。`,
+注意：辞書ルールの適用は必須です。変換漏れがないか、最後に必ず確認してください。
+変換前と変換後のテキストを比較し、すべてのルールが正しく適用されているか確認してください。`,
         },
         {
           role: "user",
-          content: `${dictionaryRules}\n\n以下のテキストを校正してください。既に一部の辞書ルールが適用されている可能性がありますが、漏れがないか確認してください：\n\n${modifiedText}`,
+          content: `${dictionaryRules}\n\n以下のテキストを校正してください。既に一部の辞書ルールが適用されている可能性がありますが、漏れがないか確認してください：\n\n${modifiedText}\n\n変換前のテキスト（参考用）：\n${text}`,
         },
       ],
       temperature: 0.1, // より決定論的な出力に
