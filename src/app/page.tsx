@@ -5,6 +5,7 @@ import { FileUploader } from "./components/FileUploader";
 import { ProgressBar } from "./components/ProgressBar";
 import { TextEditor } from "./components/TextEditor";
 import { TranscriptionStatus } from "@/lib/types";
+import GlossaryEditor from "./components/GlossaryEditor";
 
 export default function Home() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -139,6 +140,12 @@ export default function Home() {
             onCorrectedTextChange={setCorrectedText}
           />
         )}
+      </div>
+
+      {/* 用語集セクション */}
+      <div className="mt-8">
+        <h2 className="text-2xl font-bold mb-4">用語集</h2>
+        <GlossaryEditor />
       </div>
     </main>
   );
