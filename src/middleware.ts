@@ -6,6 +6,7 @@ function isPublicPath(pathname: string): boolean {
   // 認証が不要なパスのリスト
   const publicPaths = [
     "/login",
+    "/api/auth/login", // ログインAPIは認証不要
     "/_next", // Next.jsの静的アセット
     "/favicon.ico",
   ];
