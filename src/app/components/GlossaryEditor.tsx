@@ -45,7 +45,9 @@ export default function GlossaryEditor({ onSave }: GlossaryEditorProps) {
         new Set(
           data
             .map((term: GlossaryTerm) => term.category)
-            .filter((category): category is string => Boolean(category))
+            .filter((category: string | undefined): category is string =>
+              Boolean(category)
+            )
         )
       );
       setCategories(uniqueCategories);
