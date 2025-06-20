@@ -1,8 +1,5 @@
 "use client";
 
-import * as React from "react";
-import * as Progress from "@radix-ui/react-progress";
-import { cn } from "@/lib/utils";
 import { TranscriptionStatus } from "@/lib/types";
 
 interface ProgressBarProps {

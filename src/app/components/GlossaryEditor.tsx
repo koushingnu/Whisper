@@ -1,4 +1,6 @@
-import { useState, useEffect } from "react";
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
 
 interface GlossaryTerm {
   id: number;
@@ -25,7 +27,7 @@ export default function GlossaryEditor({ onSave }: GlossaryEditorProps) {
   const [isLoading, setIsLoading] = useState(false);
 
   // 用語一覧を取得
-  const fetchTerms = async () => {
+  const fetchTerms = useCallback(async () => {
     try {
       setIsLoading(true);
       const params = new URLSearchParams();
@@ -48,7 +50,7 @@ export default function GlossaryEditor({ onSave }: GlossaryEditorProps) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [searchQuery, selectedCategory]);
 
   // 初回読み込み時に用語一覧を取得
   useEffect(() => {
