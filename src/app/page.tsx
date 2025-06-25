@@ -22,6 +22,19 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 文字起こし完了状態を追加
+  const isTranscriptionComplete =
+    transcriptionStatus === "completed" && transcriptionResult !== null;
+
+  // リセット処理を追加
+  const handleReset = () => {
+    setTranscriptionStatus("idle");
+    setProgress(0);
+    setTranscriptionResult(null);
+    setCorrectionResult(null);
+    setError(null);
+  };
+
   // 認証状態を確認
   useEffect(() => {
     const checkAuth = async () => {
@@ -167,6 +180,22 @@ export default function Home() {
     }
   };
 
+  // ダウンロード処理を追加
+  const handleDownload = () => {
+    if (!transcriptionResult) return;
+
+    const text = transcriptionResult.text;
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `transcription_${new Date().toISOString().split("T")[0]}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  };
+
   return (
     <main className="container mx-auto px-4 py-8 max-w-4xl">
       <h1 className="text-3xl font-bold mb-8">音声文字起こし＆校正アプリ</h1>
@@ -197,45 +226,96 @@ export default function Home() {
           onFileSelect={handleFileSelect}
           isProcessing={isProcessing}
           isAuthenticated={isAuthenticated}
+          isTranscriptionComplete={isTranscriptionComplete}
+          onReset={handleReset}
         />
 
-        {transcriptionStatus !== "idle" && (
-          <ProgressBar status={transcriptionStatus} progress={progress} />
+        {isProcessing && (
+          <div className="space-y-2">
+            <ProgressBar progress={progress} />
+            <p className="text-sm text-gray-600 text-center">
+              {transcriptionStatus === "transcribing"
+                ? "文字起こしを実行中..."
+                : "校正を実行中..."}
+            </p>
+          </div>
         )}
 
         {transcriptionResult && (
-          <>
+          <div
+            className={`space-y-4 ${isTranscriptionComplete ? "mt-2" : "mt-8"}`}
+          >
+            <div className="flex justify-end">
+              <button
+                onClick={handleDownload}
+                className="flex items-center space-x-2 text-sm text-blue-600 hover:text-blue-700"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                  />
+                </svg>
+                <span>テキストをダウンロード</span>
+              </button>
+            </div>
+
             <TextEditor
               transcriptionResult={transcriptionResult}
               onSave={handleSave}
             />
+
             {correctionResult && (
-              <div className="mt-4 space-y-4">
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <h3 className="text-lg font-semibold text-green-800 mb-2">
-                    適用された辞書ルール
-                  </h3>
-                  <pre className="whitespace-pre-wrap text-sm text-green-700">
-                    {correctionResult.appliedRules}
-                  </pre>
-                </div>
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h3 className="text-lg font-semibold text-blue-800 mb-2">
-                    その他の修正点
-                  </h3>
-                  <pre className="whitespace-pre-wrap text-sm text-blue-700">
-                    {correctionResult.otherCorrections}
-                  </pre>
-                </div>
+              <div className="mt-6 p-6 bg-gray-50 rounded-lg space-y-6">
+                <h2 className="text-lg font-semibold mb-4">校正内容</h2>
+
+                {correctionResult.appliedRules && (
+                  <div className="space-y-2">
+                    <h3 className="font-medium text-gray-700">
+                      適用された修正ルール
+                    </h3>
+                    <div className="pl-4 space-y-1 text-sm">
+                      {correctionResult.appliedRules.split("\n").map(
+                        (rule, index) =>
+                          rule.trim() && (
+                            <p key={index} className="text-gray-600">
+                              • {rule.trim()}
+                            </p>
+                          )
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {correctionResult.otherCorrections && (
+                  <div className="space-y-2">
+                    <h3 className="font-medium text-gray-700">
+                      その他の修正点
+                    </h3>
+                    <div className="pl-4 space-y-1 text-sm">
+                      {correctionResult.otherCorrections.split("\n").map(
+                        (correction, index) =>
+                          correction.trim() && (
+                            <p key={index} className="text-gray-600">
+                              • {correction.trim()}
+                            </p>
+                          )
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
-          </>
+          </div>
         )}
-      </div>
 
-      {/* 用語集セクション */}
-      <div className="mt-8">
-        <h2 className="text-2xl font-bold mb-4">用語集</h2>
         <GlossaryEditor />
       </div>
     </main>

@@ -139,22 +139,17 @@ export function TextEditor({ transcriptionResult, onSave }: TextEditorProps) {
   return (
     <div className="space-y-4">
       <div
-        className="w-full p-4 border rounded-lg bg-white"
+        className="w-full p-1 border rounded-lg bg-white"
         onMouseUp={handleTextSelection}
       >
         {segments.map((segment, index) => (
           <div
             key={index}
-            className="mb-4 p-3 hover:bg-gray-50 border-b last:border-b-0 relative"
+            className="mb-0 py-0 px-1 hover:bg-gray-50 border-b last:border-b-0 relative"
           >
-            <div className="flex items-start gap-3">
-              <span className="text-sm text-gray-500 whitespace-nowrap bg-gray-100 px-2 py-1 rounded">
-                {formatTime(segment.start)} - {formatTime(segment.end)}
-              </span>
-              <span className="text-gray-900 flex-1 leading-relaxed">
-                {segment.text}
-              </span>
-            </div>
+            <span className="text-[11px] leading-[1.1] text-gray-900 block">
+              {segment.text}
+            </span>
           </div>
         ))}
       </div>
