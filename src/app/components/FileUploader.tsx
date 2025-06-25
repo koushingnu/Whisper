@@ -3,227 +3,246 @@
 import React, { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  getAudioUploadUrl,
+  uploadAudioToS3,
+  isValidAudioFile,
+  isValidFileSize,
+} from "@/lib/utils/audio";
 
 interface FileUploaderProps {
-  onFileSelect: (file: File) => void;
-  isProcessing: boolean;
-  isAuthenticated: boolean;
-  isTranscriptionComplete?: boolean;
-  onReset?: () => void;
+  onTranscriptionComplete: (
+    text: string,
+    timestamps: { start: number; end: number }[]
+  ) => void;
+  onError: (error: string) => void;
 }
 
-export function FileUploader({
-  onFileSelect,
-  isProcessing,
-  isAuthenticated,
-  isTranscriptionComplete = false,
-  onReset,
+export default function FileUploader({
+  onTranscriptionComplete,
+  onError,
 }: FileUploaderProps) {
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string>("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    if (acceptedFiles.length > 0) {
-      const file = acceptedFiles[0];
-      setSelectedFile(file);
-    }
-  }, []);
+  // ファイルの存在を確認する関数
+  const checkFileExists = async (fileUrl: string): Promise<boolean> => {
+    try {
+      const response = await fetch("/api/check-file", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ fileUrl }),
+      });
 
-  const handleStartTranscription = () => {
-    if (selectedFile) {
-      onFileSelect(selectedFile);
+      if (!response.ok) {
+        throw new Error("ファイルの確認に失敗しました");
+      }
+
+      const data = await response.json();
+      return data.exists;
+    } catch (error) {
+      console.error("File check error:", error);
+      return false;
     }
   };
 
+  // アップロード完了を待つ関数
+  const waitForUpload = async (
+    fileUrl: string,
+    maxAttempts = 10
+  ): Promise<void> => {
+    for (let i = 0; i < maxAttempts; i++) {
+      setUploadProgress(`アップロード確認中... (${i + 1}/${maxAttempts})`);
+      if (await checkFileExists(fileUrl)) {
+        console.log("File existence confirmed");
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 3000)); // 3秒待機
+    }
+    throw new Error("ファイルのアップロードを確認できませんでした");
+  };
+
+  const handleProcessFile = async () => {
+    if (!selectedFile) return;
+
+    setIsUploading(true);
+    setUploadProgress("アップロードの準備中...");
+    try {
+      // 1. S3に直接アップロード
+      setUploadProgress("ファイルをアップロード中...");
+      const fileUrl = await uploadToS3(selectedFile);
+
+      // アップロード完了を確認
+      await waitForUpload(fileUrl);
+
+      // 2. 文字起こし処理
+      setUploadProgress("文字起こしを開始します...");
+      const result = await transcribe(fileUrl);
+
+      // 校正後のテキストのみを表示するため、ここでは何もしない
+      // 校正処理は親コンポーネントで行われ、その結果のみが表示される
+      onTranscriptionComplete(result.text, result.timestamps);
+    } catch (error) {
+      console.error("Error:", error);
+      onError(error instanceof Error ? error.message : "エラーが発生しました");
+    } finally {
+      setIsUploading(false);
+      setUploadProgress("");
+    }
+  };
+
+  const uploadToS3 = async (file: File): Promise<string> => {
+    // ファイルの検証
+    if (!isValidAudioFile(file)) {
+      throw new Error("許可されていない音声ファイル形式です");
+    }
+    if (!isValidFileSize(file)) {
+      throw new Error("ファイルサイズは25MB以下にしてください");
+    }
+
+    // 1. 署名付きURLを取得
+    const { uploadUrl, fileUrl } = await getAudioUploadUrl(file);
+
+    // 2. S3に直接アップロード
+    await uploadAudioToS3(file, uploadUrl);
+
+    // 3. アップロード直後に1回確認
+    console.log("Verifying upload immediately...");
+    if (await checkFileExists(fileUrl)) {
+      console.log("File verified immediately after upload");
+      return fileUrl;
+    }
+
+    // 4. 確認できなかった場合は待機処理へ
+    return fileUrl;
+  };
+
+  const transcribe = async (fileUrl: string) => {
+    const response = await fetch("/api/transcribe", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ fileUrl }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || "文字起こしに失敗しました");
+    }
+
+    return response.json();
+  };
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
     accept: {
-      "audio/mpeg": [".mp3"],
-      "audio/wav": [".wav"],
-      "audio/x-m4a": [".m4a"],
+      "audio/*": [".mp3", ".wav", ".m4a", ".ogg", ".webm", ".aac"],
     },
     maxFiles: 1,
-    maxSize: 25 * 1024 * 1024, // 25MB制限
-    disabled: isProcessing || !isAuthenticated,
+    maxSize: 25 * 1024 * 1024, // 25MB
+    onDrop: async (acceptedFiles) => {
+      if (acceptedFiles.length === 0) return;
+      setSelectedFile(acceptedFiles[0]);
+    },
   });
 
-  return (
-    <AnimatePresence>
-      {!isTranscriptionComplete && (
-        <motion.div
-          initial={{ opacity: 1, height: "auto" }}
-          exit={{ opacity: 0, height: 0 }}
-          transition={{ duration: 0.2 }}
-          className="space-y-4"
-        >
-          <div
-            {...getRootProps()}
-            className={`
-              border-2 border-dashed rounded-lg p-8 text-center
-              transition-colors duration-200 ease-in-out
-              ${
-                !isAuthenticated
-                  ? "border-gray-300 bg-gray-100 cursor-not-allowed opacity-50"
-                  : isProcessing
-                    ? "border-gray-300 bg-gray-100 cursor-not-allowed"
-                    : isDragActive
-                      ? "border-blue-500 bg-blue-50 cursor-pointer"
-                      : selectedFile
-                        ? "border-green-500 bg-green-50 cursor-pointer"
-                        : "border-gray-300 hover:border-blue-400 hover:bg-gray-50 cursor-pointer"
-              }
-            `}
-          >
-            <input {...getInputProps()} />
-            <div className="space-y-4">
-              {!isAuthenticated ? (
-                <>
-                  <div className="flex justify-center">
-                    <svg
-                      className="w-12 h-12 text-gray-400"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 15v2m0 0v2m0-2h2m-2 0H9m3-12a9 9 0 110 18 9 9 0 010-18z"
-                      />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-lg font-medium text-gray-700">
-                      ログインが必要です
-                    </p>
-                    <p className="text-sm text-gray-500 mt-2">
-                      文字起こしを開始するにはログインしてください
-                    </p>
-                  </div>
-                </>
-              ) : isProcessing ? (
-                <>
-                  <div className="flex justify-center">
-                    <svg
-                      className="w-12 h-12 text-gray-400 animate-spin"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                      />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-lg font-medium text-gray-700">
-                      処理中...
-                    </p>
-                    <p className="text-sm text-gray-500 mt-2">
-                      処理が完了するまでお待ちください
-                    </p>
-                  </div>
-                </>
-              ) : selectedFile ? (
-                <>
-                  <div className="flex items-center justify-center">
-                    <svg
-                      className="w-12 h-12 text-green-500"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M5 13l4 4L19 7"
-                      />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-lg font-medium text-green-600">
-                      {selectedFile.name}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      クリックまたはドラッグ＆ドロップで別のファイルを選択
-                    </p>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="flex justify-center">
-                    <svg
-                      className="w-12 h-12 text-gray-400"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                      />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-lg font-medium text-gray-700">
-                      音声ファイルをドラッグ＆ドロップ、またはクリックして選択
-                    </p>
-                    <p className="text-sm text-gray-500 mt-2">
-                      対応形式: .mp3, .wav, .m4a (最大25MB)
-                    </p>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+  const handleCancel = () => {
+    setSelectedFile(null);
+    setUploadProgress("");
+  };
 
-          {selectedFile && !isProcessing && (
-            <button
-              onClick={handleStartTranscription}
-              className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
+  return (
+    <div className="space-y-4">
+      <div
+        {...getRootProps()}
+        className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+          isDragActive
+            ? "border-blue-500 bg-blue-50"
+            : "border-gray-300 hover:border-gray-400"
+        }`}
+      >
+        <input {...getInputProps()} />
+        <AnimatePresence mode="wait">
+          {isUploading ? (
+            <motion.div
+              key="uploading"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="space-y-2"
             >
-              文字起こしを開始
-            </button>
+              <p className="text-gray-600">{uploadProgress || "処理中..."}</p>
+              {uploadProgress && (
+                <div className="w-full max-w-md mx-auto h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div className="h-full bg-blue-500 animate-pulse"></div>
+                </div>
+              )}
+            </motion.div>
+          ) : selectedFile ? (
+            <motion.div
+              key="selected"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="space-y-2"
+            >
+              <p className="text-green-600">
+                選択されたファイル: {selectedFile.name}
+              </p>
+              <p className="text-sm text-gray-500">
+                クリックまたはドロップで選び直せます
+              </p>
+            </motion.div>
+          ) : isDragActive ? (
+            <motion.p
+              key="dragging"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="text-gray-600"
+            >
+              ここにファイルをドロップ...
+            </motion.p>
+          ) : (
+            <motion.div
+              key="default"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="space-y-2"
+            >
+              <p className="text-gray-600">
+                クリックしてファイルを選択、またはドラッグ&ドロップしてください
+              </p>
+              <p className="text-sm text-gray-500">
+                対応形式: MP3, WAV, M4A, OGG, WebM, AAC（最大25MB）
+              </p>
+            </motion.div>
           )}
-        </motion.div>
-      )}
-      {isTranscriptionComplete && onReset && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="flex justify-end"
-        >
+        </AnimatePresence>
+      </div>
+
+      {selectedFile && !isUploading && (
+        <div className="flex justify-center space-x-4">
           <button
-            onClick={onReset}
-            className="text-sm text-blue-600 hover:text-blue-700 flex items-center space-x-1"
+            onClick={handleProcessFile}
+            className="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+            disabled={isUploading}
           >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-            <span>新しい文字起こしを開始</span>
+            文字起こしを開始
           </button>
-        </motion.div>
+          <button
+            onClick={handleCancel}
+            className="px-6 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
+            disabled={isUploading}
+          >
+            キャンセル
+          </button>
+        </div>
       )}
-    </AnimatePresence>
+    </div>
   );
 }

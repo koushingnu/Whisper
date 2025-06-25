@@ -1,16 +1,26 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { TranscriptionResult, Segment, DictionaryEntry } from "@/lib/types";
 
 interface TextEditorProps {
-  transcriptionResult: TranscriptionResult;
+  initialText: string;
   onSave: (text: string) => void;
+  readOnly: boolean;
+  timestamps: { start: number; end: number }[];
 }
 
-export function TextEditor({ transcriptionResult, onSave }: TextEditorProps) {
+export function TextEditor({
+  initialText,
+  onSave,
+  readOnly,
+  timestamps,
+}: TextEditorProps) {
+  const [text, setText] = useState(initialText);
+  const [isEditing, setIsEditing] = useState(false);
   const [segments, setSegments] = useState<Segment[]>([]);
   const [showDictionaryForm, setShowDictionaryForm] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [dictionaryEntry, setDictionaryEntry] = useState<
     Partial<DictionaryEntry>
   >({
@@ -18,6 +28,45 @@ export function TextEditor({ transcriptionResult, onSave }: TextEditorProps) {
     correct: "",
     category: "",
   });
+
+  // テキストエリアの高さを自動調整する関数
+  const adjustTextareaHeight = () => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  };
+
+  useEffect(() => {
+    if (!initialText) return;
+
+    // テキストを整形
+    const formattedText = formatText(initialText);
+    setText(formattedText);
+
+    // 次のレンダリングサイクルでテキストエリアの高さを調整
+    setTimeout(adjustTextareaHeight, 0);
+
+    const mergedSegments = mergeSegments(timestamps, formattedText);
+    setSegments(mergedSegments);
+  }, [initialText, timestamps]);
+
+  // テキストが変更されたときに高さを調整
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [text]);
+
+  // ウィンドウサイズが変更されたときに高さを再調整
+  useEffect(() => {
+    const handleResize = () => {
+      adjustTextareaHeight();
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
 
   // セグメントをマージする関数
   const mergeSegments = (
@@ -79,16 +128,75 @@ export function TextEditor({ transcriptionResult, onSave }: TextEditorProps) {
     return newSegments;
   };
 
-  // 文字起こし結果をセグメントに分割
-  useEffect(() => {
-    if (!transcriptionResult?.text) return;
+  // テキストを整形する関数
+  const formatText = (text: string): string => {
+    // 1. 不要な空白や改行を削除
+    let formatted = text.trim().replace(/\s+/g, " ");
 
-    const mergedSegments = mergeSegments(
-      transcriptionResult.timestamps,
-      transcriptionResult.text
-    );
-    setSegments(mergedSegments);
-  }, [transcriptionResult]);
+    // 2. 句点で改行を入れる
+    formatted = formatted.replace(/([。！？])\s*/g, "$1\n");
+
+    // 3. 長い文章を適度な長さで改行
+    const lines = formatted.split("\n");
+    const maxLength = 40; // 1行あたりの最大文字数
+
+    const newLines = lines.map((line) => {
+      if (line.length <= maxLength) return line;
+
+      // 読点で分割して改行を入れる
+      const segments = line.split(/([、，])/).filter(Boolean);
+      let currentLine = "";
+      const resultLines = [];
+
+      segments.forEach((segment, index) => {
+        if (currentLine.length + segment.length > maxLength) {
+          resultLines.push(currentLine);
+          currentLine = segment;
+        } else {
+          currentLine += segment;
+        }
+
+        // 最後のセグメントの処理
+        if (index === segments.length - 1 && currentLine) {
+          resultLines.push(currentLine);
+        }
+      });
+
+      return resultLines.join("\n");
+    });
+
+    return newLines.join("\n");
+  };
+
+  const handleEdit = () => {
+    setIsEditing(true);
+    // 編集モード開始時にも高さを調整
+    setTimeout(adjustTextareaHeight, 0);
+  };
+
+  const handleSave = () => {
+    setIsEditing(false);
+    onSave(text);
+  };
+
+  const handleCancel = () => {
+    setIsEditing(false);
+    setText(initialText);
+    // キャンセル時にも高さを調整
+    setTimeout(adjustTextareaHeight, 0);
+  };
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setText(e.target.value);
+    // テキスト変更時に高さを調整（useEffectでも処理される）
+    adjustTextareaHeight();
+  };
+
+  const formatTime = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+  };
 
   const handleTextSelection = () => {
     const selection = window.getSelection();
@@ -126,33 +234,64 @@ export function TextEditor({ transcriptionResult, onSave }: TextEditorProps) {
 
   return (
     <div className="space-y-4">
-      <div
-        className="w-full p-1 border rounded-lg bg-white"
-        onMouseUp={handleTextSelection}
-      >
-        {segments.map((segment, index) => (
-          <div
-            key={index}
-            className="mb-0 py-0 px-1 hover:bg-gray-50 border-b last:border-b-0 relative"
-          >
-            <span className="text-[11px] leading-[1.1] text-gray-900 block">
-              {segment.text}
-            </span>
+      <div className="flex justify-between items-center">
+        <h2 className="text-lg font-semibold">文字起こし結果</h2>
+        {!readOnly && (
+          <div className="space-x-2">
+            {isEditing ? (
+              <>
+                <button
+                  onClick={handleSave}
+                  className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                >
+                  保存
+                </button>
+                <button
+                  onClick={handleCancel}
+                  className="px-3 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
+                >
+                  キャンセル
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={handleEdit}
+                className="px-3 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
+              >
+                編集
+              </button>
+            )}
           </div>
-        ))}
+        )}
       </div>
 
-      {/* 保存ボタンを追加 */}
-      <div className="flex justify-end mt-4">
-        <button
-          onClick={() => {
-            const text = segments.map((segment) => segment.text).join(" ");
-            onSave(text);
+      <div className="relative">
+        <textarea
+          ref={textareaRef}
+          value={text}
+          onChange={handleTextChange}
+          disabled={!isEditing || readOnly}
+          className={`w-full p-4 border rounded-lg font-sans text-base leading-relaxed overflow-hidden ${
+            isEditing && !readOnly
+              ? "bg-white border-blue-300"
+              : "bg-gray-50 border-gray-200"
+          }`}
+          style={{
+            lineHeight: "1.8",
+            letterSpacing: "0.5px",
+            resize: "none",
+            minHeight: "auto",
+            height: "auto",
           }}
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-        >
-          保存
-        </button>
+        />
+        {timestamps.length > 0 && !isEditing && (
+          <div className="absolute right-2 top-2 bg-white/80 backdrop-blur-sm p-2 rounded shadow-sm">
+            <p className="text-xs text-gray-600">
+              {formatTime(timestamps[0].start)} -{" "}
+              {formatTime(timestamps[timestamps.length - 1].end)}
+            </p>
+          </div>
+        )}
       </div>
 
       {showDictionaryForm && (

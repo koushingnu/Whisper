@@ -1,0 +1,101 @@
+import { NextRequest } from "next/server";
+import OpenAI from "openai";
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
+
+export async function POST(request: NextRequest) {
+  try {
+    console.log("Transcription request received");
+    const formData = await request.formData();
+    const audioFile = formData.get("file");
+
+    if (!audioFile || !(audioFile instanceof File)) {
+      console.error("No file found in request or invalid file type");
+      return new Response(
+        JSON.stringify({ error: "ファイルが見つかりません" }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    console.log("File received:", {
+      type: audioFile.type,
+      size: audioFile.size,
+      name: audioFile.name,
+    });
+
+    // ファイルサイズチェック
+    if (audioFile.size > MAX_FILE_SIZE) {
+      console.error("File size exceeds limit:", audioFile.size);
+      return new Response(
+        JSON.stringify({
+          error: "ファイルサイズが大きすぎます",
+          details: "ファイルサイズは25MB以下にしてください",
+        }),
+        {
+          status: 413,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    console.log("Sending request to Whisper API");
+    // OpenAI APIにファイルを送信
+    const response = await openai.audio.transcriptions.create({
+      file: audioFile,
+      model: "whisper-1",
+      language: "ja",
+      response_format: "verbose_json",
+      timestamp_granularities: ["segment"],
+    });
+
+    console.log("Whisper API response received");
+    // レスポンスからタイムスタンプ情報を抽出
+    const segments = response.segments || [];
+    const timestamps = segments.map((segment) => ({
+      start: segment.start,
+      end: segment.end,
+    }));
+
+    console.log("Processing completed successfully");
+    return new Response(
+      JSON.stringify({
+        text: response.text,
+        timestamps: timestamps,
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  } catch (error) {
+    console.error("Whisper API error:", error);
+    // エラーの詳細情報を取得
+    const errorDetails =
+      error instanceof Error
+        ? {
+            message: error.message,
+            name: error.name,
+            stack: error.stack,
+          }
+        : String(error);
+
+    console.error("Error details:", errorDetails);
+    return new Response(
+      JSON.stringify({
+        error: "文字起こし処理中にエラーが発生しました",
+        details: errorDetails,
+      }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  }
+} 

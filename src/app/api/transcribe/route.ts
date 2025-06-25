@@ -1,22 +1,94 @@
 import { NextRequest } from "next/server";
 import OpenAI from "openai";
+import { deleteFromS3 } from "@/lib/utils/s3";
+import { GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { s3Client } from "@/lib/s3";
+import { Readable } from "stream";
+import { Buffer } from "buffer";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
+async function streamToBuffer(stream: Readable): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  return new Promise((resolve, reject) => {
+    stream.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+    stream.on("error", (err) => reject(err));
+    stream.on("end", () => resolve(Buffer.concat(chunks)));
+  });
+}
+
+async function downloadFileFromS3(
+  bucket: string,
+  key: string
+): Promise<Buffer> {
+  console.log("Downloading from S3:", { bucket, key });
+
+  // ファイルが存在するか確認するための最大試行回数
+  const maxAttempts = 5;
+  const delayMs = 1000; // 1秒待機
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const command = new GetObjectCommand({
+        Bucket: bucket,
+        Key: key,
+      });
+
+      const response = await s3Client.send(command);
+
+      if (!response.Body) {
+        throw new Error("Empty response from S3");
+      }
+
+      // ReadableStreamをBufferに変換
+      const stream = response.Body as Readable;
+      const chunks: Buffer[] = [];
+
+      for await (const chunk of stream) {
+        chunks.push(Buffer.from(chunk));
+      }
+
+      return Buffer.concat(chunks);
+    } catch (error) {
+      if (attempt === maxAttempts) {
+        console.error("S3 download error after all attempts:", error);
+        throw new Error(
+          `Failed to download file from S3: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+      console.log(`Attempt ${attempt} failed, retrying in ${delayMs}ms...`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+
+  throw new Error("Failed to download file after all attempts");
+}
+
+async function deleteFileFromS3(bucket: string, key: string) {
+  try {
+    const command = new DeleteObjectCommand({
+      Bucket: bucket,
+      Key: key,
+    });
+    await s3Client.send(command);
+    console.log("Successfully deleted file from S3:", { bucket, key });
+  } catch (error) {
+    console.error("Error deleting file from S3:", error);
+  }
+}
 
 export async function POST(request: NextRequest) {
-  try {
-    console.log("Transcription request received");
-    const formData = await request.formData();
-    const audioFile = formData.get("file");
+  let fileUrl = "";
+  let bucket = "";
+  let key = "";
 
-    if (!audioFile || !(audioFile instanceof File)) {
-      console.error("No file found in request or invalid file type");
+  try {
+    const body = await request.json();
+    if (!body.fileUrl) {
       return new Response(
-        JSON.stringify({ error: "ファイルが見つかりません" }),
+        JSON.stringify({ error: "ファイルのURLが指定されていません" }),
         {
           status: 400,
           headers: { "Content-Type": "application/json" },
@@ -24,36 +96,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log("File received:", {
-      type: audioFile.type,
-      size: audioFile.size,
-      name: audioFile.name,
-    });
+    fileUrl = body.fileUrl;
+    console.log("Processing file from S3:", fileUrl);
 
-    // ファイルサイズチェック
-    if (audioFile.size > MAX_FILE_SIZE) {
-      console.error("File size exceeds limit:", audioFile.size);
-      return new Response(
-        JSON.stringify({
-          error: "ファイルサイズが大きすぎます",
-          details: "ファイルサイズは25MB以下にしてください",
-        }),
-        {
-          status: 413,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
+    // fileUrlからバケット名とキーを抽出
+    const url = new URL(fileUrl);
+    bucket = process.env.S3_BUCKET_NAME!;
+    key = url.pathname.slice(1); // 先頭の'/'を削除
+
+    console.log("Downloading file from S3");
+    const audioData = await downloadFileFromS3(bucket, key);
 
     console.log("Sending request to Whisper API");
     // OpenAI APIにファイルを送信
     const response = await openai.audio.transcriptions.create({
-      file: audioFile,
+      file: new File([audioData], "audio.mp3", { type: "audio/mpeg" }),
       model: "whisper-1",
       language: "ja",
       response_format: "verbose_json",
       timestamp_granularities: ["segment"],
     });
+
+    // 一時ファイルを削除
+    console.log("Deleting temporary file from S3");
+    await deleteFileFromS3(bucket, key);
 
     console.log("Whisper API response received");
     // レスポンスからタイムスタンプ情報を抽出
@@ -75,6 +141,12 @@ export async function POST(request: NextRequest) {
       }
     );
   } catch (error) {
+    // エラー発生時は一時ファイルを削除
+    if (fileUrl) {
+      console.log("Deleting temporary file from S3 due to error");
+      await deleteFileFromS3(bucket, key);
+    }
+
     console.error("Whisper API error:", error);
     // エラーの詳細情報を取得
     const errorDetails =
@@ -98,4 +170,16 @@ export async function POST(request: NextRequest) {
       }
     );
   }
+}
+
+// OPTIONSリクエストのハンドラを追加
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    },
+  });
 }

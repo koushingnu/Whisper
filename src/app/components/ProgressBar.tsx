@@ -3,24 +3,46 @@
 import { TranscriptionStatus } from "@/lib/types";
 
 interface ProgressBarProps {
-  status: TranscriptionStatus;
   progress: number;
+  status: TranscriptionStatus;
+  error: string | null;
 }
 
-export function ProgressBar({ status, progress }: ProgressBarProps) {
+export function ProgressBar({ progress, status, error }: ProgressBarProps) {
+  const getStatusText = () => {
+    switch (status) {
+      case "transcribing":
+        return "文字起こしを実行中...";
+      case "correcting":
+        return "校正を実行中...";
+      case "completed":
+        return "完了";
+      case "error":
+        return "エラーが発生しました";
+      default:
+        return "";
+    }
+  };
+
   return (
-    <div className="w-full">
-      <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+    <div className="space-y-2">
+      <div className="w-full bg-gray-200 rounded-full h-2.5">
         <div
-          className="h-full bg-blue-600 transition-all duration-500"
+          className={`h-2.5 rounded-full transition-all duration-300 ${
+            status === "error"
+              ? "bg-red-600"
+              : status === "completed"
+                ? "bg-green-600"
+                : "bg-blue-600"
+          }`}
           style={{ width: `${progress}%` }}
         />
       </div>
-      <div className="mt-2 text-sm text-gray-600 text-center">
-        {status === "transcribing" && "文字起こし中..."}
-        {status === "correcting" && "校正中..."}
-        {status === "completed" && "完了"}
+      <div className="flex justify-between items-center text-sm">
+        <span className="text-gray-600">{getStatusText()}</span>
+        <span className="text-gray-600">{progress}%</span>
       </div>
+      {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
     </div>
   );
 }
