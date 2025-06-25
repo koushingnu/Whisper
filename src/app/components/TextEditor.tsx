@@ -142,6 +142,19 @@ export function TextEditor({ transcriptionResult, onSave }: TextEditorProps) {
         ))}
       </div>
 
+      {/* 保存ボタンを追加 */}
+      <div className="flex justify-end mt-4">
+        <button
+          onClick={() => {
+            const text = segments.map((segment) => segment.text).join(" ");
+            onSave(text);
+          }}
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+        >
+          保存
+        </button>
+      </div>
+
       {showDictionaryForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
           <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full">
