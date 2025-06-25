@@ -232,7 +232,7 @@ export default function Home() {
 
         {isProcessing && (
           <div className="space-y-2">
-            <ProgressBar progress={progress} />
+            <ProgressBar status={transcriptionStatus} progress={progress} />
             <p className="text-sm text-gray-600 text-center">
               {transcriptionStatus === "transcribing"
                 ? "文字起こしを実行中..."
