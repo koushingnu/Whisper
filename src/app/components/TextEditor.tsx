@@ -28,7 +28,6 @@ export function TextEditor({ transcriptionResult, onSave }: TextEditorProps) {
     let currentText = "";
     let currentStart = 0;
     let lastEnd = 0;
-    let textStartIndex = 0;
 
     // 文章を分割（。！？で区切る）
     const sentences = text.match(/[^。！？]+[。！？]?/g) || [text];
@@ -123,17 +122,6 @@ export function TextEditor({ transcriptionResult, onSave }: TextEditorProps) {
       console.error("Error:", error);
       alert("辞書の登録に失敗しました");
     }
-  };
-
-  const formatTime = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
-  };
-
-  const handleSave = () => {
-    const text = segments.map((segment) => segment.text).join(" ");
-    onSave(text);
   };
 
   return (
