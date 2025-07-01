@@ -178,7 +178,7 @@ export default function Home() {
           onTranscriptionComplete={handleTranscriptionComplete}
           onError={handleError}
           isProcessing={
-            transcriptionStatus === "processing" ||
+            transcriptionStatus === "transcribing" ||
             transcriptionStatus === "correcting"
           }
         />
