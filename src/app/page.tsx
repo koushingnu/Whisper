@@ -148,7 +148,9 @@ export default function Home() {
           <div className="space-y-4">
             <TextEditor
               initialText={transcriptionResult.text}
-              readOnly={!["idle", "transcribing"].includes(transcriptionStatus)}
+              readOnly={["transcribing", "correcting"].includes(
+                transcriptionStatus
+              )}
             />
 
             {correctionResult && (
