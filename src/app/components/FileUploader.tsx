@@ -16,15 +16,25 @@ interface FileUploaderProps {
     timestamps: { start: number; end: number }[]
   ) => void;
   onError: (error: string) => void;
+  isProcessing: boolean;
 }
 
 export default function FileUploader({
   onTranscriptionComplete,
   onError,
+  isProcessing,
 }: FileUploaderProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string>("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  // 処理中の状態を統合
+  const isProcessingState = isUploading || isProcessing;
+  const getProgressMessage = () => {
+    if (isProcessing) return "文字起こしと校正を実行中...";
+    if (uploadProgress) return uploadProgress;
+    return "処理中...";
+  };
 
   // ファイルの存在を確認する関数
   const checkFileExists = async (fileUrl: string): Promise<boolean> => {
@@ -147,9 +157,13 @@ export default function FileUploader({
       if (acceptedFiles.length === 0) return;
       setSelectedFile(acceptedFiles[0]);
     },
+    disabled: isProcessingState,
+    noClick: isProcessingState,
+    noDrag: isProcessingState,
   });
 
   const handleCancel = () => {
+    if (isProcessingState) return;
     setSelectedFile(null);
     setUploadProgress("");
   };
@@ -158,15 +172,17 @@ export default function FileUploader({
     <div className="space-y-4">
       <div
         {...getRootProps()}
-        className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
-          isDragActive
-            ? "border-blue-500 bg-blue-50"
-            : "border-gray-300 hover:border-gray-400"
+        className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+          isProcessingState
+            ? "border-gray-300 bg-gray-50 cursor-not-allowed"
+            : isDragActive
+              ? "border-blue-500 bg-blue-50"
+              : "border-gray-300 hover:border-gray-400 cursor-pointer"
         }`}
       >
-        <input {...getInputProps()} />
+        <input {...getInputProps()} disabled={isProcessingState} />
         <AnimatePresence mode="wait">
-          {isUploading ? (
+          {isProcessingState ? (
             <motion.div
               key="uploading"
               initial={{ opacity: 0 }}
@@ -174,12 +190,10 @@ export default function FileUploader({
               exit={{ opacity: 0 }}
               className="space-y-2"
             >
-              <p className="text-gray-600">{uploadProgress || "処理中..."}</p>
-              {uploadProgress && (
-                <div className="w-full max-w-md mx-auto h-2 bg-gray-200 rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-500 animate-pulse"></div>
-                </div>
-              )}
+              <p className="text-gray-600">{getProgressMessage()}</p>
+              <div className="w-full max-w-md mx-auto h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div className="h-full bg-blue-500 animate-pulse"></div>
+              </div>
             </motion.div>
           ) : selectedFile ? (
             <motion.div
@@ -198,13 +212,13 @@ export default function FileUploader({
             </motion.div>
           ) : isDragActive ? (
             <motion.p
-              key="dragging"
+              key="drag"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="text-gray-600"
+              className="text-blue-500"
             >
-              ここにファイルをドロップ...
+              ここにファイルをドロップしてください
             </motion.p>
           ) : (
             <motion.div
@@ -215,29 +229,41 @@ export default function FileUploader({
               className="space-y-2"
             >
               <p className="text-gray-600">
-                クリックしてファイルを選択、またはドラッグ&ドロップしてください
+                クリックまたはドラッグ＆ドロップで
+                <br />
+                音声ファイルを選択してください
               </p>
               <p className="text-sm text-gray-500">
-                対応形式: MP3, WAV, M4A, OGG, WebM, AAC（最大25MB）
+                対応形式: MP3, WAV, M4A, OGG, WebM, AAC
+                <br />
+                最大サイズ: 25MB
               </p>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      {selectedFile && !isUploading && (
-        <div className="flex justify-center space-x-4">
+      {selectedFile && !isProcessingState && (
+        <div className="flex justify-center space-x-4 mt-4">
           <button
             onClick={handleProcessFile}
-            className="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-            disabled={isUploading}
+            disabled={!selectedFile || isProcessingState}
+            className={`px-4 py-2 rounded-md text-white ${
+              !selectedFile || isProcessingState
+                ? "bg-gray-400 cursor-not-allowed"
+                : "bg-blue-500 hover:bg-blue-600"
+            }`}
           >
             文字起こしを開始
           </button>
           <button
             onClick={handleCancel}
-            className="px-6 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
-            disabled={isUploading}
+            disabled={isProcessingState}
+            className={`px-4 py-2 rounded-md ${
+              isProcessingState
+                ? "bg-gray-400 text-white cursor-not-allowed"
+                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+            }`}
           >
             キャンセル
           </button>

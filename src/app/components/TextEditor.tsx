@@ -1,371 +1,369 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { TranscriptionResult, Segment, DictionaryEntry } from "@/lib/types";
+import { DiffModal } from "./DiffModal";
 
 interface TextEditorProps {
   initialText: string;
   onSave: (text: string) => void;
   readOnly: boolean;
-  timestamps: { start: number; end: number }[];
 }
 
-export function TextEditor({
-  initialText,
-  onSave,
-  readOnly,
-  timestamps,
-}: TextEditorProps) {
-  const [text, setText] = useState(initialText);
-  const [isEditing, setIsEditing] = useState(false);
-  const [segments, setSegments] = useState<Segment[]>([]);
-  const [showDictionaryForm, setShowDictionaryForm] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [dictionaryEntry, setDictionaryEntry] = useState<
-    Partial<DictionaryEntry>
-  >({
-    incorrect: "",
-    correct: "",
-    category: "",
-  });
+interface LineData {
+  id: number;
+  text: string;
+  isEditing: boolean;
+  originalText: string;
+}
 
-  // テキストエリアの高さを自動調整する関数
-  const adjustTextareaHeight = () => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-    }
+interface TextDiff {
+  beforeText: string;
+  afterText: string;
+}
+
+export function TextEditor({ initialText, onSave, readOnly }: TextEditorProps) {
+  const [lines, setLines] = useState<LineData[]>([]);
+  const [showDiffModal, setShowDiffModal] = useState(false);
+  const [currentDiffIndex, setCurrentDiffIndex] = useState(0);
+  const [textDiffs, setTextDiffs] = useState<TextDiff[]>([]);
+  const textareaRefs = useRef<{ [key: number]: HTMLTextAreaElement | null }>(
+    {}
+  );
+
+  // テキストエリアの参照を設定する関数
+  const setTextareaRef = (
+    lineId: number,
+    element: HTMLTextAreaElement | null
+  ) => {
+    textareaRefs.current[lineId] = element;
   };
 
+  // テキストを行に分割する関数
+  const splitIntoLines = (text: string): LineData[] => {
+    return text.split("\n").map((line, index) => ({
+      id: index,
+      text: line,
+      isEditing: false,
+      originalText: line,
+    }));
+  };
+
+  // 初期テキストの設定
   useEffect(() => {
     if (!initialText) return;
-
-    // テキストを整形
     const formattedText = formatText(initialText);
-    setText(formattedText);
-
-    // 次のレンダリングサイクルでテキストエリアの高さを調整
-    setTimeout(adjustTextareaHeight, 0);
-
-    const mergedSegments = mergeSegments(timestamps, formattedText);
-    setSegments(mergedSegments);
-  }, [initialText, timestamps]);
-
-  // テキストが変更されたときに高さを調整
-  useEffect(() => {
-    adjustTextareaHeight();
-  }, [text]);
-
-  // ウィンドウサイズが変更されたときに高さを再調整
-  useEffect(() => {
-    const handleResize = () => {
-      adjustTextareaHeight();
-    };
-
-    window.addEventListener("resize", handleResize);
-    return () => {
-      window.removeEventListener("resize", handleResize);
-    };
-  }, []);
-
-  // セグメントをマージする関数
-  const mergeSegments = (
-    rawSegments: { start: number; end: number }[],
-    text: string
-  ) => {
-    const newSegments: Segment[] = [];
-    let currentText = "";
-    let currentStart = 0;
-    let lastEnd = 0;
-
-    // 文章を分割（。！？で区切る）
-    const sentences = text.match(/[^。！？]+[。！？]?/g) || [text];
-    let currentSentenceIndex = 0;
-
-    for (let i = 0; i < rawSegments.length; i++) {
-      const segment = rawSegments[i];
-
-      // 現在の文を取得
-      if (currentSentenceIndex < sentences.length) {
-        const sentence = sentences[currentSentenceIndex].trim();
-
-        // 新しいセグメントを開始する条件
-        if (
-          newSegments.length === 0 || // 最初のセグメント
-          segment.start - lastEnd > 1.0 || // 時間が離れている
-          currentText.length > 100 || // テキストが長くなりすぎている
-          sentence.endsWith("。") || // 文末
-          sentence.endsWith("！") ||
-          sentence.endsWith("？")
-        ) {
-          if (currentText) {
-            newSegments.push({
-              text: currentText.trim(),
-              start: currentStart,
-              end: lastEnd,
-            });
-          }
-          currentText = sentence;
-          currentStart = segment.start;
-        } else {
-          currentText += sentence;
-        }
-
-        lastEnd = segment.end;
-        currentSentenceIndex++;
-      }
-    }
-
-    // 残りのテキストがあれば最後のセグメントとして追加
-    if (currentText) {
-      newSegments.push({
-        text: currentText.trim(),
-        start: currentStart,
-        end: lastEnd,
-      });
-    }
-
-    return newSegments;
-  };
+    setLines(splitIntoLines(formattedText));
+  }, [initialText]);
 
   // テキストを整形する関数
   const formatText = (text: string): string => {
-    // 1. 不要な空白や改行を削除
-    let formatted = text.trim().replace(/\s+/g, " ");
+    if (!text) return "";
 
-    // 2. 句点で改行を入れる
-    formatted = formatted.replace(/([。！？])\s*/g, "$1\n");
+    let formatted = text
+      .trim()
+      .replace(/\n+/g, "\n")
+      .replace(/[ 　]+/g, " ")
+      .replace(/([。！？、]) /g, "$1");
 
-    // 3. 長い文章を適度な長さで改行
-    const lines = formatted.split("\n");
-    const maxLength = 40; // 1行あたりの最大文字数
+    formatted = formatted
+      .replace(/([。！？])(?![」』）\)])/g, "$1\n")
+      .replace(/([、])(?![」』）\)])/g, "$1 ");
 
-    const newLines = lines.map((line) => {
-      if (line.length <= maxLength) return line;
+    return formatted;
+  };
 
-      // 読点で分割して改行を入れる
-      const segments = line.split(/([、，])/).filter(Boolean);
-      let currentLine = "";
-      const resultLines = [];
+  // 行の編集を開始
+  const handleEditLine = (lineId: number) => {
+    setLines((prev) =>
+      prev.map((line) =>
+        line.id === lineId ? { ...line, isEditing: true } : line
+      )
+    );
+  };
 
-      segments.forEach((segment, index) => {
-        if (currentLine.length + segment.length > maxLength) {
-          resultLines.push(currentLine);
-          currentLine = segment;
-        } else {
-          currentLine += segment;
-        }
+  // 行の編集をキャンセル
+  const handleCancelEdit = (lineId: number) => {
+    setLines((prev) =>
+      prev.map((line) =>
+        line.id === lineId
+          ? { ...line, isEditing: false, text: line.originalText }
+          : line
+      )
+    );
+  };
 
-        // 最後のセグメントの処理
-        if (index === segments.length - 1 && currentLine) {
-          resultLines.push(currentLine);
-        }
+  // 修正箇所の前後のコンテキストを抽出する関数
+  const extractContext = (
+    text: string,
+    modifiedText: string
+  ): { before: string; after: string } => {
+    // 日本語の文字（漢字、ひらがな、カタカナ）、英数字、記号で分割
+    const splitPattern =
+      /([一-龯ぁ-んァ-ヶー々〆〤ヽヾ゛゜a-zA-Z0-9]+|[、。！？．，\s])/g;
+    const words = text.match(splitPattern) || [];
+    const modifiedWords = modifiedText.match(splitPattern) || [];
+
+    let startIndex = 0;
+    let endIndex = words.length - 1;
+    let modifiedStartIndex = 0;
+    let modifiedEndIndex = modifiedWords.length - 1;
+
+    // 先頭から一致する部分をスキップ
+    while (
+      startIndex < words.length &&
+      modifiedStartIndex < modifiedWords.length &&
+      words[startIndex] === modifiedWords[modifiedStartIndex]
+    ) {
+      startIndex++;
+      modifiedStartIndex++;
+    }
+
+    // 末尾から一致する部分をスキップ
+    while (
+      endIndex > startIndex &&
+      modifiedEndIndex > modifiedStartIndex &&
+      words[endIndex] === modifiedWords[modifiedEndIndex]
+    ) {
+      endIndex--;
+      modifiedEndIndex--;
+    }
+
+    // 前後のコンテキストを含めて抽出（句読点で区切られた単位で）
+    const contextSize = 3; // 前後3文節まで含める
+    let beforeStart = startIndex;
+    let afterEnd = endIndex;
+    let modifiedBeforeStart = modifiedStartIndex;
+    let modifiedAfterEnd = modifiedEndIndex;
+
+    // 前方のコンテキストを探す
+    let sentenceCount = 0;
+    for (let i = startIndex - 1; i >= 0 && sentenceCount < contextSize; i--) {
+      beforeStart = i;
+      if (/[。！？]/.test(words[i])) {
+        sentenceCount++;
+      }
+    }
+
+    // 後方のコンテキストを探す
+    sentenceCount = 0;
+    for (
+      let i = endIndex + 1;
+      i < words.length && sentenceCount < contextSize;
+      i++
+    ) {
+      afterEnd = i;
+      if (/[。！？]/.test(words[i])) {
+        sentenceCount++;
+      }
+    }
+
+    // 修正後のテキストも同様に処理
+    sentenceCount = 0;
+    for (
+      let i = modifiedStartIndex - 1;
+      i >= 0 && sentenceCount < contextSize;
+      i--
+    ) {
+      modifiedBeforeStart = i;
+      if (/[。！？]/.test(modifiedWords[i])) {
+        sentenceCount++;
+      }
+    }
+
+    sentenceCount = 0;
+    for (
+      let i = modifiedEndIndex + 1;
+      i < modifiedWords.length && sentenceCount < contextSize;
+      i++
+    ) {
+      modifiedAfterEnd = i;
+      if (/[。！？]/.test(modifiedWords[i])) {
+        sentenceCount++;
+      }
+    }
+
+    return {
+      before: words.slice(beforeStart, afterEnd + 1).join(""),
+      after: modifiedWords
+        .slice(modifiedBeforeStart, modifiedAfterEnd + 1)
+        .join(""),
+    };
+  };
+
+  // 行の変更を保存
+  const handleSaveLine = (lineId: number) => {
+    setLines((prev) => {
+      const updatedLines = prev.map((line) =>
+        line.id === lineId ? { ...line, isEditing: false } : line
+      );
+
+      // 変更を検出して差分配列に追加
+      const changedLine = prev.find((l) => l.id === lineId);
+      if (changedLine && changedLine.text !== changedLine.originalText) {
+        const { before, after } = extractContext(
+          changedLine.originalText,
+          changedLine.text
+        );
+        setTextDiffs([
+          {
+            beforeText: before,
+            afterText: after,
+          },
+        ]);
+        setCurrentDiffIndex(0);
+        setShowDiffModal(true);
+      }
+
+      return updatedLines;
+    });
+  };
+
+  // 差分モーダルでの確定処理
+  const handleConfirmDiff = async (beforeText: string, afterText: string) => {
+    try {
+      // 辞書に保存
+      const response = await fetch("/api/dictionary/learn", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          changes: [
+            {
+              original: beforeText,
+              edited: afterText,
+            },
+          ],
+        }),
       });
 
-      return resultLines.join("\n");
-    });
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("Dictionary update failed:", errorData);
+        throw new Error(errorData.error || "Failed to update dictionary");
+      }
 
-    return newLines.join("\n");
-  };
+      const result = await response.json();
+      console.log("Dictionary update result:", result);
 
-  const handleEdit = () => {
-    setIsEditing(true);
-    // 編集モード開始時にも高さを調整
-    setTimeout(adjustTextareaHeight, 0);
-  };
+      // モーダルを閉じる
+      setShowDiffModal(false);
+      setTextDiffs([]);
+      setCurrentDiffIndex(0);
 
-  const handleSave = () => {
-    setIsEditing(false);
-    onSave(text);
-  };
-
-  const handleCancel = () => {
-    setIsEditing(false);
-    setText(initialText);
-    // キャンセル時にも高さを調整
-    setTimeout(adjustTextareaHeight, 0);
-  };
-
-  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setText(e.target.value);
-    // テキスト変更時に高さを調整（useEffectでも処理される）
-    adjustTextareaHeight();
-  };
-
-  const formatTime = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
-  };
-
-  const handleTextSelection = () => {
-    const selection = window.getSelection();
-    if (selection && selection.toString().trim()) {
-      setDictionaryEntry((prev) => ({
-        ...prev,
-        incorrect: selection.toString().trim(),
-      }));
-      setShowDictionaryForm(true);
+      // 変更を確定
+      setLines((prev) =>
+        prev.map((line) =>
+          line.text !== line.originalText
+            ? { ...line, originalText: line.text }
+            : line
+        )
+      );
+    } catch (error) {
+      console.error("Failed to save changes to dictionary:", error);
+      alert(
+        "辞書の更新に失敗しました: " +
+          (error instanceof Error ? error.message : String(error))
+      );
     }
   };
 
-  const handleDictionarySubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const response = await fetch("/api/dictionary", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(dictionaryEntry),
-      });
+  // モーダルを閉じる
+  const handleCloseDiffModal = () => {
+    // 編集をキャンセルして元の状態に戻す
+    setLines((prev) =>
+      prev.map((line) =>
+        line.text !== line.originalText
+          ? { ...line, text: line.originalText }
+          : line
+      )
+    );
+    setShowDiffModal(false);
+    setTextDiffs([]);
+    setCurrentDiffIndex(0);
+  };
 
-      if (!response.ok) throw new Error("辞書の登録に失敗しました");
+  // テキストエリアの高さを自動調整
+  const adjustTextareaHeight = (textarea: HTMLTextAreaElement) => {
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  };
 
-      // フォームをリセット
-      setDictionaryEntry({ incorrect: "", correct: "", category: "" });
-      setShowDictionaryForm(false);
+  // 行のテキスト変更時の処理
+  const handleLineChange = (lineId: number, value: string) => {
+    setLines((prev) =>
+      prev.map((line) => (line.id === lineId ? { ...line, text: value } : line))
+    );
 
-      // 成功メッセージを表示
-      alert("辞書に登録しました");
-    } catch (error) {
-      console.error("Error:", error);
-      alert("辞書の登録に失敗しました");
+    if (textareaRefs.current[lineId]) {
+      adjustTextareaHeight(textareaRefs.current[lineId]!);
     }
   };
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h2 className="text-lg font-semibold">文字起こし結果</h2>
-        {!readOnly && (
-          <div className="space-x-2">
-            {isEditing ? (
-              <>
-                <button
-                  onClick={handleSave}
-                  className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                >
-                  保存
-                </button>
-                <button
-                  onClick={handleCancel}
-                  className="px-3 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
-                >
-                  キャンセル
-                </button>
-              </>
+      <div className="space-y-2">
+        {lines.map((line) => (
+          <div key={line.id} className="relative group">
+            {line.isEditing ? (
+              <div className="flex items-start space-x-2">
+                <textarea
+                  ref={(el) => setTextareaRef(line.id, el)}
+                  value={line.text}
+                  onChange={(e) => handleLineChange(line.id, e.target.value)}
+                  className="flex-1 p-2 border rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  style={{
+                    minHeight: "2.5rem",
+                    lineHeight: "1.8",
+                    letterSpacing: "0.5px",
+                    fontFamily: "'Noto Sans JP', sans-serif",
+                    fontSize: "16px",
+                    resize: "none",
+                  }}
+                  onFocus={(e) => adjustTextareaHeight(e.target)}
+                />
+                <div className="flex space-x-1">
+                  <button
+                    onClick={() => handleSaveLine(line.id)}
+                    className="px-2 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+                  >
+                    保存
+                  </button>
+                  <button
+                    onClick={() => handleCancelEdit(line.id)}
+                    className="px-2 py-1 text-sm bg-gray-500 text-white rounded hover:bg-gray-600"
+                  >
+                    キャンセル
+                  </button>
+                </div>
+              </div>
             ) : (
-              <button
-                onClick={handleEdit}
-                className="px-3 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
-              >
-                編集
-              </button>
+              <div className="flex items-center group relative">
+                <p className="flex-1 p-2 pr-24 rounded-lg hover:bg-gray-50">
+                  {line.text}
+                </p>
+                {!readOnly && (
+                  <button
+                    onClick={() => handleEditLine(line.id)}
+                    className="opacity-0 group-hover:opacity-100 absolute right-2 px-4 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition-opacity"
+                  >
+                    編集
+                  </button>
+                )}
+              </div>
             )}
           </div>
-        )}
+        ))}
       </div>
 
-      <div className="relative">
-        <textarea
-          ref={textareaRef}
-          value={text}
-          onChange={handleTextChange}
-          disabled={!isEditing || readOnly}
-          className={`w-full p-4 border rounded-lg font-sans text-base leading-relaxed overflow-hidden ${
-            isEditing && !readOnly
-              ? "bg-white border-blue-300"
-              : "bg-gray-50 border-gray-200"
-          }`}
-          style={{
-            lineHeight: "1.8",
-            letterSpacing: "0.5px",
-            resize: "none",
-            minHeight: "auto",
-            height: "auto",
-          }}
-        />
-        {timestamps.length > 0 && !isEditing && (
-          <div className="absolute right-2 top-2 bg-white/80 backdrop-blur-sm p-2 rounded shadow-sm">
-            <p className="text-xs text-gray-600">
-              {formatTime(timestamps[0].start)} -{" "}
-              {formatTime(timestamps[timestamps.length - 1].end)}
-            </p>
-          </div>
-        )}
-      </div>
-
-      {showDictionaryForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full">
-            <h3 className="text-lg font-bold mb-4">辞書に登録</h3>
-            <form onSubmit={handleDictionarySubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  変換前のテキスト
-                </label>
-                <input
-                  type="text"
-                  value={dictionaryEntry.incorrect}
-                  onChange={(e) =>
-                    setDictionaryEntry((prev) => ({
-                      ...prev,
-                      incorrect: e.target.value,
-                    }))
-                  }
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  変換後のテキスト
-                </label>
-                <input
-                  type="text"
-                  value={dictionaryEntry.correct}
-                  onChange={(e) =>
-                    setDictionaryEntry((prev) => ({
-                      ...prev,
-                      correct: e.target.value,
-                    }))
-                  }
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  カテゴリー
-                </label>
-                <input
-                  type="text"
-                  value={dictionaryEntry.category}
-                  onChange={(e) =>
-                    setDictionaryEntry((prev) => ({
-                      ...prev,
-                      category: e.target.value,
-                    }))
-                  }
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                />
-              </div>
-              <div className="flex justify-end space-x-2">
-                <button
-                  type="button"
-                  onClick={() => setShowDictionaryForm(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
-                >
-                  キャンセル
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
-                >
-                  登録
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* 差分確認モーダル */}
+      <DiffModal
+        isOpen={showDiffModal}
+        beforeText={textDiffs[currentDiffIndex]?.beforeText || ""}
+        afterText={textDiffs[currentDiffIndex]?.afterText || ""}
+        onConfirm={handleConfirmDiff}
+        onClose={handleCloseDiffModal}
+      />
     </div>
   );
 }
