@@ -21,10 +21,6 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 文字起こし完了状態を追加
-  const isTranscriptionComplete =
-    transcriptionStatus === "completed" && transcriptionResult !== null;
-
   // リセット処理を追加
   const handleReset = () => {
     setTranscriptionStatus("idle");

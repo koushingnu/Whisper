@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { HeadObjectCommand } from "@aws-sdk/client-s3";
+import { HeadObjectCommand, S3ServiceException } from "@aws-sdk/client-s3";
 import { s3Client } from "@/lib/s3";
 
 export async function POST(request: NextRequest) {
@@ -34,8 +34,8 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       console.log("S3 HeadObject error:", error);
       if (
-        (error as any).name === "NotFound" ||
-        (error as any).name === "UnknownError"
+        error instanceof S3ServiceException &&
+        (error.name === "NotFound" || error.name === "UnknownError")
       ) {
         return new Response(JSON.stringify({ exists: false }), {
           status: 200,

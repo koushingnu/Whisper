@@ -4,7 +4,7 @@ import { generatePresignedUrl } from "@/lib/utils/s3";
 // APIルートのエクスポート設定を修正
 export const dynamic = "force-dynamic";
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // 環境変数の確認
     const envCheck = {

@@ -7,7 +7,6 @@ export async function getAudioUploadUrl(file: File): Promise<{
 }> {
   const timestamp = Date.now();
   const fileName = encodeURIComponent(`${timestamp}-${file.name}`);
-  const key = `temp/${fileName}`;
 
   const response = await fetch("/api/audio-upload", {
     method: "POST",

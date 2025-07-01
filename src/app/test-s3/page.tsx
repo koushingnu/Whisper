@@ -2,8 +2,24 @@
 
 import { useState } from "react";
 
+interface S3TestResult {
+  success?: boolean;
+  uploadUrl?: string;
+  fileUrl?: string;
+  envCheck?: {
+    bucket: string | undefined;
+    region: string | undefined;
+    hasAccessKey: boolean;
+    hasSecretKey: boolean;
+  };
+  uploadSuccess?: boolean;
+  uploadStatus?: number;
+  fileExists?: boolean;
+  fileCheckError?: string;
+}
+
 export default function TestS3Page() {
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<S3TestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -80,6 +96,9 @@ export default function TestS3Page() {
 
       // アップロード成功後、ファイルの存在を確認
       try {
+        if (!result.fileUrl) {
+          throw new Error("File URL is undefined");
+        }
         const checkResponse = await fetch(result.fileUrl, { method: "HEAD" });
         console.log("File check status:", checkResponse.status);
 

@@ -1,6 +1,5 @@
 import { NextRequest } from "next/server";
 import OpenAI from "openai";
-import { deleteFromS3 } from "@/lib/utils/s3";
 import { GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client } from "@/lib/s3";
 import { Readable } from "stream";
@@ -9,15 +8,6 @@ import { Buffer } from "buffer";
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
-
-async function streamToBuffer(stream: Readable): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-  return new Promise((resolve, reject) => {
-    stream.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
-    stream.on("error", (err) => reject(err));
-    stream.on("end", () => resolve(Buffer.concat(chunks)));
-  });
-}
 
 async function downloadFileFromS3(
   bucket: string,

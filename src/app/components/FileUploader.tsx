@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useState } from "react";
+import React, { useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -9,6 +9,7 @@ import {
   isValidAudioFile,
   isValidFileSize,
 } from "@/lib/utils/audio";
+import { ProgressBar } from "./ProgressBar";
 
 interface FileUploaderProps {
   onTranscriptionComplete: (

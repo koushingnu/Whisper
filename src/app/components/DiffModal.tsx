@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { diffWords, Change } from "diff";
+import { diffWords } from "diff";
 
 interface DiffModalProps {
   isOpen: boolean;
