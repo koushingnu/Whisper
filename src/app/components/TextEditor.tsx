@@ -6,8 +6,6 @@ import { DiffModal } from "./DiffModal";
 interface TextEditorProps {
   initialText: string;
   readOnly: boolean;
-  onSave?: (text: string) => Promise<void>;
-  timestamps?: { start: number; end: number }[];
 }
 
 interface LineData {
@@ -22,12 +20,7 @@ interface TextDiff {
   afterText: string;
 }
 
-export function TextEditor({
-  initialText,
-  readOnly,
-  onSave,
-  timestamps,
-}: TextEditorProps) {
+export function TextEditor({ initialText, readOnly }: TextEditorProps) {
   const [lines, setLines] = useState<LineData[]>([]);
   const [showDiffModal, setShowDiffModal] = useState(false);
   const [currentDiffIndex, setCurrentDiffIndex] = useState(0);
