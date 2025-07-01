@@ -106,53 +106,6 @@ export default function Home() {
     setProgress(0);
   };
 
-  const handleSave = async (text: string) => {
-    if (!isAuthenticated) {
-      window.location.href = "/login";
-      return;
-    }
-
-    setError(null);
-    setTranscriptionStatus("correcting");
-
-    try {
-      const response = await fetch("/api/chatgpt", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ text }),
-      });
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          window.location.href = "/login";
-          return;
-        }
-        throw new Error("校正に失敗しました");
-      }
-
-      const result = await response.json();
-      setCorrectionResult(result);
-
-      // 校正結果を新しいtranscriptionResultとして設定
-      if (transcriptionResult && result.correctedText) {
-        setTranscriptionResult({
-          text: result.correctedText,
-          timestamps: transcriptionResult.timestamps,
-        });
-      }
-
-      setTranscriptionStatus("completed");
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "校正中にエラーが発生しました";
-      setError(errorMessage);
-      console.error("校正中にエラーが発生しました:", error);
-      setTranscriptionStatus("error");
-    }
-  };
-
   // ダウンロード処理を追加
   const handleDownload = () => {
     if (!transcriptionResult) return;
@@ -195,9 +148,7 @@ export default function Home() {
           <div className="space-y-4">
             <TextEditor
               initialText={transcriptionResult.text}
-              onSave={handleSave}
-              readOnly={transcriptionStatus === "correcting"}
-              timestamps={transcriptionResult.timestamps}
+              readOnly={!["idle", "transcribing"].includes(transcriptionStatus)}
             />
 
             {correctionResult && (
