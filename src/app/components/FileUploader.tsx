@@ -9,7 +9,6 @@ import {
   isValidAudioFile,
   isValidFileSize,
 } from "@/lib/utils/audio";
-import { ProgressBar } from "./ProgressBar";
 
 interface FileUploaderProps {
   onTranscriptionComplete: (

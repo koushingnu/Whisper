@@ -1,4 +1,3 @@
-import { NextRequest } from "next/server";
 import { generatePresignedUrl } from "@/lib/utils/s3";
 
 // APIルートのエクスポート設定を修正
