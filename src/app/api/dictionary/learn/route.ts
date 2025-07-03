@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
     }
 
     // データベースに保存
-    const { data, error } = await supabase.from("dictionary").insert(
+    const { error } = await supabase.from("dictionary").insert(
       uniqueChanges.map((change) => ({
         incorrect: change.incorrect.trim(),
         correct: change.correct.trim(),
