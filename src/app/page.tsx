@@ -2,13 +2,11 @@
 
 import React, { useState, useEffect } from "react";
 import FileUploader from "./components/FileUploader";
-
 import { TextEditor } from "./components/TextEditor";
-import { TranscriptionStatus, TranscriptionResult } from "@/lib/types";
-import GlossaryEditor from "./components/GlossaryEditor";
-import { formatText } from "@/lib/utils/text";
-import ApiCostInfo, { ActualCostInfo } from "./components/ApiCostInfo";
 import { DailyUsageInfo } from "./components/DailyUsageInfo";
+import { ActualCostInfo } from "./components/ApiCostInfo";
+import { TranscriptionStatus, TranscriptionResult } from "@/lib/types";
+import { formatText } from "@/lib/utils/text";
 
 export default function Home() {
   const [transcriptionStatus, setTranscriptionStatus] =
@@ -151,10 +149,7 @@ export default function Home() {
           <div className="w-64 shrink-0">
             <div className="sticky top-4 space-y-4">
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                <ApiCostInfo
-                  audioDuration={audioDuration}
-                  showActualCost={false}
-                />
+                <ActualCostInfo audioDuration={audioDuration} />
               </div>
               <DailyUsageInfo />
               {/* 校正完了後に実際の料金を表示 */}
@@ -266,12 +261,6 @@ export default function Home() {
                   )}
                 </div>
               )}
-
-              {/* 用語集を一時的に無効化
-              <div className="mt-4">
-                <GlossaryEditor />
-              </div>
-              */}
             </div>
           </div>
         </div>

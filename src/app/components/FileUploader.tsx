@@ -45,8 +45,6 @@ export default function FileUploader({
   );
   const [progressPercentage, setProgressPercentage] = useState<number>(0);
   const [showProgressBar, setShowProgressBar] = useState(false);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [audioPlayer, setAudioPlayer] = useState<HTMLAudioElement | null>(null);
   const { refetch: refetchDailyUsage } = useDailyUsage();
 
   // 処理中の状態を統合

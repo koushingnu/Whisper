@@ -1,5 +1,6 @@
 import React from "react";
 import { useDailyUsage } from "@/lib/hooks/useDailyUsage";
+import { DAILY_USAGE_LIMIT } from "@/lib/constants";
 
 export function DailyUsageInfo() {
   const { dailyUsage, remainingBudget, isLoading, error } = useDailyUsage();
@@ -61,7 +62,7 @@ export function DailyUsageInfo() {
               <div
                 className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                 style={{
-                  width: `${Math.min((dailyUsage.total_cost / 100) * 100, 100)}%`,
+                  width: `${Math.min((dailyUsage.total_cost / DAILY_USAGE_LIMIT) * 100, 100)}%`,
                 }}
               />
             </div>

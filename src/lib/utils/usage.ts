@@ -1,5 +1,6 @@
 import { supabase } from "../supabase";
 import { calculateApiCosts } from "./text";
+import { DAILY_USAGE_LIMIT } from "../constants";
 
 // 日次利用額の取得
 export async function getDailyUsage(date: string) {
@@ -43,10 +44,10 @@ export async function checkUsageLimit(audioDuration: number): Promise<{
   const projectedTotal = dailyUsage.total_cost + estimatedCost.total;
 
   return {
-    canProceed: projectedTotal <= 1000,
+    canProceed: projectedTotal <= DAILY_USAGE_LIMIT,
     reason:
-      projectedTotal > 1000
-        ? "本日の利用制限額（1,000円）を超過します"
+      projectedTotal > DAILY_USAGE_LIMIT
+        ? `本日の利用制限額（${DAILY_USAGE_LIMIT.toLocaleString()}円）を超過します`
         : undefined,
     estimatedCost,
   };
