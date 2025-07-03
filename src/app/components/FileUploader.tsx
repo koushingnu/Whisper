@@ -459,6 +459,20 @@ export default function FileUploader({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* エラーメッセージの表示 */}
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="p-4 bg-red-50 rounded-lg text-red-600 text-sm"
+          >
+            {error}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
