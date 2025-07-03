@@ -86,30 +86,28 @@ export function ActualCostInfo({ audioDuration }: { audioDuration: number }) {
   const durationMinutes = Math.ceil(audioDuration / 60);
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-      <div className="text-sm">
-        <div className="font-medium text-gray-700 mb-4">今回の利用料金</div>
-        <div className="space-y-3">
-          <div className="text-xs text-gray-500">
-            音声の長さ: {durationMinutes}分
+    <div className="text-sm">
+      <div className="font-medium text-gray-700 mb-4">今回の利用料金</div>
+      <div className="space-y-3">
+        <div className="text-xs text-gray-500">
+          音声の長さ: {durationMinutes}分
+        </div>
+        <div className="space-y-2">
+          <div className="flex justify-between items-center">
+            <span className="text-gray-600">Whisper API:</span>
+            <span className="font-mono text-gray-700">
+              ¥{actualCosts.whisper.toFixed(2)}
+            </span>
           </div>
-          <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">Whisper API:</span>
-              <span className="font-mono text-gray-700">
-                ¥{actualCosts.whisper.toFixed(2)}
-              </span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">ChatGPT API (GPT-4):</span>
-              <span className="font-mono text-gray-700">
-                ¥{actualCosts.chatgpt.toFixed(2)}
-              </span>
-            </div>
-            <div className="flex justify-between items-center pt-2 border-t border-gray-100 font-medium text-gray-800">
-              <span>合計:</span>
-              <span className="font-mono">¥{actualCosts.total.toFixed(2)}</span>
-            </div>
+          <div className="flex justify-between items-center">
+            <span className="text-gray-600">ChatGPT API (GPT-4):</span>
+            <span className="font-mono text-gray-700">
+              ¥{actualCosts.chatgpt.toFixed(2)}
+            </span>
+          </div>
+          <div className="flex justify-between items-center pt-2 border-t border-gray-100 font-medium text-gray-800">
+            <span>合計:</span>
+            <span className="font-mono">¥{actualCosts.total.toFixed(2)}</span>
           </div>
         </div>
       </div>
