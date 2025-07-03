@@ -27,6 +27,9 @@ function applyDictionaryRules(text: string, dictionary: DictionaryEntry[]) {
   let modifiedText = text;
   const appliedRules: string[] = [];
 
+  // デバッグ用：辞書の内容を出力
+  console.log("Dictionary entries:", dictionary);
+
   // 長い文字列から先に置換するようにソート
   const sortedDictionary = [...dictionary].sort(
     (a, b) => (b.incorrect?.length || 0) - (a.incorrect?.length || 0)
@@ -54,12 +57,20 @@ function applyDictionaryRules(text: string, dictionary: DictionaryEntry[]) {
       return `${prefix}${entry.correct}${suffix}`;
     });
 
+    // デバッグ用：各エントリーの置換結果を出力
+    console.log(
+      `Rule "${entry.incorrect}" → "${entry.correct}": ${count} matches`
+    );
+
     if (count > 0) {
       appliedRules.push(
         `"${entry.incorrect}" → "${entry.correct}" (${count}箇所)`
       );
     }
   });
+
+  // デバッグ用：最終的な適用ルールを出力
+  console.log("Applied rules:", appliedRules);
 
   return { modifiedText, appliedRules };
 }
@@ -123,7 +134,7 @@ export async function POST(request: NextRequest) {
     // ChatGPTによる追加の校正
     const dictionaryRules = formatDictionaryRules(dictionary);
     const response = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
+      model: "gpt-4o",
       messages: [
         {
           role: "system",
@@ -166,13 +177,30 @@ export async function POST(request: NextRequest) {
 
     // ChatGPTの出力を解析
     const content = response.choices[0].message.content || "";
-    const sections = content.split(/\n{2,}/);
 
-    // 最終的な校正結果
-    const correctedText = sections[0] || modifiedText;
-    const chatGPTAppliedRules =
-      sections[1] || "ChatGPTによる追加の辞書ルール適用はありません";
-    const otherCorrections = sections[2] || "その他の修正はありません";
+    // 1. 校正後のテキスト
+    const correctedTextMatch = content.match(
+      /1\.\s*校正後のテキスト[：:]\s*([\s\S]*?)(?=\n2\.)/
+    );
+    const correctedText = correctedTextMatch
+      ? correctedTextMatch[1].trim()
+      : modifiedText;
+
+    // 2. 適用したルール
+    const appliedRulesMatch = content.match(
+      /2\.\s*適用した(?:辞書)*ルール(?:の一覧)*[：:]\s*([\s\S]*?)(?=\n3\.)/
+    );
+    const chatGPTAppliedRules = appliedRulesMatch
+      ? appliedRulesMatch[1].trim()
+      : "ChatGPTによる追加の辞書ルール適用はありません";
+
+    // 3. その他の修正
+    const otherCorrectionsMatch = content.match(
+      /3\.\s*その他(?:の修正点の要約)*[：:]\s*([\s\S]*?)$/
+    );
+    const otherCorrections = otherCorrectionsMatch
+      ? otherCorrectionsMatch[1].trim()
+      : "その他の修正はありません";
 
     // 機械的な適用とChatGPTの適用を組み合わせた結果を返す
     return new Response(

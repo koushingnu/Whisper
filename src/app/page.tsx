@@ -7,6 +7,8 @@ import { TextEditor } from "./components/TextEditor";
 import { TranscriptionStatus, TranscriptionResult } from "@/lib/types";
 import GlossaryEditor from "./components/GlossaryEditor";
 import { formatText } from "@/lib/utils/text";
+import ApiCostInfo, { ActualCostInfo } from "./components/ApiCostInfo";
+import { DailyUsageInfo } from "./components/DailyUsageInfo";
 
 export default function Home() {
   const [transcriptionStatus, setTranscriptionStatus] =
@@ -21,6 +23,7 @@ export default function Home() {
   } | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [audioDuration, setAudioDuration] = useState<number>(0);
 
   // リセット処理を追加
   const handleReset = () => {
@@ -128,9 +131,14 @@ export default function Home() {
     document.body.removeChild(a);
   };
 
+  // 音声ファイルの長さを取得するコールバック
+  const handleAudioDurationChange = (duration: number) => {
+    setAudioDuration(duration);
+  };
+
   return (
     <main className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-12 max-w-4xl">
+      <div className="container mx-auto px-4 py-12">
         <h1 className="text-4xl font-bold mb-2 text-center bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-transparent">
           音声文字起こし
         </h1>
@@ -138,111 +146,134 @@ export default function Home() {
           AIを使って音声を自動で文字に起こし、校正まで行います
         </p>
 
-        <div className="space-y-8">
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-            {transcriptionStatus === "completed" ? (
-              <div className="flex justify-between items-center">
-                <button
-                  onClick={handleReset}
-                  className="text-blue-600 hover:text-blue-700 flex items-center space-x-2 transition-colors duration-200"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 4v16m8-8H4"
-                    />
-                  </svg>
-                  <span>新しい文字起こしを開始</span>
-                </button>
-
-                <button
-                  onClick={handleDownload}
-                  className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center space-x-2"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                    />
-                  </svg>
-                  <span>ダウンロード</span>
-                </button>
-              </div>
-            ) : (
-              <FileUploader
-                onTranscriptionComplete={handleTranscriptionComplete}
-                onError={handleError}
-                isProcessing={
-                  transcriptionStatus === "transcribing" ||
-                  transcriptionStatus === "correcting"
-                }
-                progress={progress}
-                status={transcriptionStatus}
-                error={error}
-              />
-            )}
-          </div>
-
-          {transcriptionStatus === "completed" && transcriptionResult && (
-            <div className="space-y-6">
+        <div className="flex gap-6">
+          {/* 左サイドバー - 料金表示 */}
+          <div className="w-64 shrink-0">
+            <div className="sticky top-4 space-y-4">
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                <TextEditor
-                  initialText={transcriptionResult.text}
-                  readOnly={["transcribing", "correcting"].includes(
-                    transcriptionStatus
-                  )}
+                <ApiCostInfo
+                  audioDuration={audioDuration}
+                  showActualCost={false}
                 />
               </div>
+              <DailyUsageInfo />
+              {/* 校正完了後に実際の料金を表示 */}
+              {transcriptionStatus === "completed" && audioDuration > 0 && (
+                <ActualCostInfo audioDuration={audioDuration} />
+              )}
+            </div>
+          </div>
 
-              {correctionResult && (
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-6">
-                  <h2 className="text-xl font-semibold text-gray-800">
-                    校正情報
-                  </h2>
-                  {correctionResult.appliedRules && (
-                    <div className="space-y-2">
-                      <h3 className="font-medium text-gray-700">
-                        適用されたルール
-                      </h3>
-                      <p className="text-sm text-gray-600 bg-gray-50 p-4 rounded-lg whitespace-pre-wrap">
-                        {correctionResult.appliedRules}
-                      </p>
-                    </div>
-                  )}
-                  {correctionResult.otherCorrections && (
-                    <div className="space-y-2">
-                      <h3 className="font-medium text-gray-700">
-                        その他の修正
-                      </h3>
-                      <p className="text-sm text-gray-600 bg-gray-50 p-4 rounded-lg whitespace-pre-wrap">
-                        {correctionResult.otherCorrections}
-                      </p>
+          {/* メインコンテンツ */}
+          <div className="flex-1 max-w-3xl">
+            <div className="space-y-8">
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                {transcriptionStatus === "completed" ? (
+                  <div className="flex justify-between items-center">
+                    <button
+                      onClick={handleReset}
+                      className="text-blue-600 hover:text-blue-700 flex items-center space-x-2 transition-colors duration-200"
+                    >
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 4v16m8-8H4"
+                        />
+                      </svg>
+                      <span>新しい文字起こしを開始</span>
+                    </button>
+
+                    <button
+                      onClick={handleDownload}
+                      className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center space-x-2"
+                    >
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                        />
+                      </svg>
+                      <span>ダウンロード</span>
+                    </button>
+                  </div>
+                ) : (
+                  <FileUploader
+                    onTranscriptionComplete={handleTranscriptionComplete}
+                    onError={handleError}
+                    isProcessing={
+                      transcriptionStatus === "transcribing" ||
+                      transcriptionStatus === "correcting"
+                    }
+                    progress={progress}
+                    status={transcriptionStatus}
+                    error={error}
+                    onAudioDurationChange={handleAudioDurationChange}
+                  />
+                )}
+              </div>
+
+              {transcriptionStatus === "completed" && transcriptionResult && (
+                <div className="space-y-6">
+                  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                    <TextEditor
+                      initialText={transcriptionResult.text}
+                      readOnly={["transcribing", "correcting"].includes(
+                        transcriptionStatus
+                      )}
+                    />
+                  </div>
+
+                  {correctionResult && (
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-6">
+                      <h2 className="text-xl font-semibold text-gray-800">
+                        校正情報
+                      </h2>
+                      {correctionResult.appliedRules && (
+                        <div className="space-y-2">
+                          <h3 className="font-medium text-gray-700">
+                            適用されたルール
+                          </h3>
+                          <p className="text-sm text-gray-600 bg-gray-50 p-4 rounded-lg whitespace-pre-wrap">
+                            {correctionResult.appliedRules}
+                          </p>
+                        </div>
+                      )}
+                      {correctionResult.otherCorrections && (
+                        <div className="space-y-2">
+                          <h3 className="font-medium text-gray-700">
+                            その他の修正
+                          </h3>
+                          <p className="text-sm text-gray-600 bg-gray-50 p-4 rounded-lg whitespace-pre-wrap">
+                            {correctionResult.otherCorrections}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
               )}
-            </div>
-          )}
 
-          {isAuthenticated && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <GlossaryEditor />
+              {/* 用語集を一時的に無効化
+              <div className="mt-4">
+                <GlossaryEditor />
+              </div>
+              */}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </main>

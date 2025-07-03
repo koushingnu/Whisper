@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { debounce } from "lodash";
 
 interface GlossaryTerm {
   id: number;
@@ -60,10 +61,29 @@ export default function GlossaryEditor({ onSave }: GlossaryEditorProps) {
     }
   }, [searchQuery, selectedCategory]);
 
-  // 初回読み込み時に用語一覧を取得
+  // デバウンスされた検索処理
+  const debouncedFetchTerms = useCallback(
+    debounce(() => {
+      fetchTerms();
+    }, 500),
+    [fetchTerms]
+  );
+
+  // 初回読み込み時と検索条件変更時に用語一覧を取得
   useEffect(() => {
-    fetchTerms();
-  }, [searchQuery, selectedCategory, fetchTerms]);
+    if (!isExpanded) return; // 展開されていない場合は取得しない
+    debouncedFetchTerms();
+    return () => {
+      debouncedFetchTerms.cancel();
+    };
+  }, [searchQuery, selectedCategory, isExpanded, debouncedFetchTerms]);
+
+  // 展開時に初回データを取得
+  useEffect(() => {
+    if (isExpanded) {
+      fetchTerms();
+    }
+  }, [isExpanded, fetchTerms]);
 
   // 新しい用語を追加
   const handleSubmit = async (e: React.FormEvent) => {

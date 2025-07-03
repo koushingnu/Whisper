@@ -10,6 +10,8 @@ import {
   isValidAudioFile,
   isValidFileSize,
 } from "@/lib/utils/audio";
+import { checkUsageLimit, recordUsage } from "@/lib/utils/usage";
+import { useDailyUsage } from "@/lib/hooks/useDailyUsage";
 
 interface FileUploaderProps {
   onTranscriptionComplete: (
@@ -18,6 +20,7 @@ interface FileUploaderProps {
     fileSize: number
   ) => void;
   onError: (error: string) => void;
+  onAudioDurationChange: (duration: number) => void;
   isProcessing: boolean;
   progress: number;
   status: TranscriptionStatus;
@@ -27,6 +30,7 @@ interface FileUploaderProps {
 export default function FileUploader({
   onTranscriptionComplete,
   onError,
+  onAudioDurationChange,
   isProcessing,
   progress,
   status,
@@ -36,12 +40,24 @@ export default function FileUploader({
   const [uploadProgress, setUploadProgress] = useState<string>("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [audioDuration, setAudioDuration] = useState<number>(0);
-  const [correctionStartTime, setCorrectionStartTime] = useState<number>(0);
+  const [correctionStartTime, setCorrectionStartTime] = useState<number | null>(
+    null
+  );
   const [progressPercentage, setProgressPercentage] = useState<number>(0);
   const [showProgressBar, setShowProgressBar] = useState(false);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioPlayer, setAudioPlayer] = useState<HTMLAudioElement | null>(null);
+  const { refetch: refetchDailyUsage } = useDailyUsage();
 
   // 処理中の状態を統合
   const isProcessingState = isUploading || isProcessing;
+
+  // 音声の長さが変更されたときにコールバックを呼び出す
+  useEffect(() => {
+    if (audioDuration > 0) {
+      onAudioDurationChange(audioDuration);
+    }
+  }, [audioDuration, onAudioDurationChange]);
 
   // 進捗状態の計算と更新
   useEffect(() => {
@@ -66,12 +82,10 @@ export default function FileUploader({
       } else if (status === "correcting") {
         setShowProgressBar(true);
         // 校正中は60-99%
-        if (audioDuration === 0) {
-          newProgress = 60 + Math.min((progress / 100) * 39, 39);
+        if (audioDuration === 0 || !correctionStartTime) {
+          newProgress = 60;
         } else {
           // 進捗スピードを調整
-          // 音声の長さに基づいて校正時間を予測
-          // 1分あたり10秒を基準に計算（例：5分の音声なら50秒）
           const baseSpeed = 10; // 1分あたりの秒数
           const expectedDuration = (audioDuration / 60) * baseSpeed;
           const elapsedTime = (Date.now() - correctionStartTime) / 1000;
@@ -81,6 +95,7 @@ export default function FileUploader({
           // 2秒ごとに進捗を更新（パフォーマンス改善）
           if (!progressInterval) {
             progressInterval = setInterval(() => {
+              if (!correctionStartTime) return;
               const currentElapsedTime =
                 (Date.now() - correctionStartTime) / 1000;
               const currentProgress =
@@ -122,22 +137,34 @@ export default function FileUploader({
     progressPercentage,
   ]);
 
-  // 進捗メッセージの取得
+  const getElapsedTime = () => {
+    if (!correctionStartTime) return 0;
+    return Math.floor((Date.now() - correctionStartTime) / 1000);
+  };
+
   const getProgressMessage = () => {
-    if (status === "completed") return "完了";
-    if (status === "error") return "エラーが発生しました";
-    if (isUploading) return uploadProgress || "アップロード中...";
-    if (status === "transcribing") return "文字起こしを実行中...";
-    if (status === "correcting") {
-      const remainingTime = calculateRemainingTime();
-      return `校正を実行中... ${remainingTime}`;
+    if (error) return error;
+    if (!isProcessingState)
+      return "ファイルをドロップまたはクリックしてアップロード";
+    if (uploadProgress) return uploadProgress;
+
+    switch (status) {
+      case "transcribing":
+        return "文字起こしを実行中...";
+      case "correcting":
+        if (!correctionStartTime) return "校正を実行中...";
+        return `校正を実行中... (${getElapsedTime()}秒)`;
+      case "completed":
+        return "処理が完了しました";
+      default:
+        return "処理中...";
     }
-    return "処理中...";
   };
 
   // 残り時間の計算
   const calculateRemainingTime = () => {
-    if (status !== "correcting" || audioDuration === 0) return "";
+    if (status !== "correcting" || audioDuration === 0 || !correctionStartTime)
+      return "";
 
     // 音声1分あたり10秒で校正時間を計算
     const baseSpeed = 10; // 1分あたりの秒数
@@ -224,17 +251,60 @@ export default function FileUploader({
     throw new Error("ファイルのアップロードを確認できませんでした");
   };
 
+  const transcribe = async (
+    fileUrl: string
+  ): Promise<{
+    text: string;
+    timestamps: { start: number; end: number }[];
+  }> => {
+    setUploadProgress("文字起こしを開始します...");
+    try {
+      const response = await fetch("/api/transcribe", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ fileUrl }),
+      });
+
+      if (!response.ok) {
+        throw new Error("文字起こしに失敗しました");
+      }
+
+      const result = await response.json();
+
+      // 校正開始時刻を記録
+      setCorrectionStartTime(Date.now());
+
+      return {
+        text: result.text,
+        timestamps: result.timestamps || [],
+      };
+    } catch (error) {
+      console.error("Transcription error:", error);
+      throw error;
+    }
+  };
+
   const handleProcessFile = async () => {
     if (!selectedFile) return;
-
-    setIsUploading(true);
-    setProgressPercentage(0);
-    setUploadProgress("アップロードの準備中...");
 
     try {
       // 音声ファイルの長さを取得
       const duration = await getAudioDuration(selectedFile);
       setAudioDuration(duration);
+
+      // 利用制限チェック
+      const { canProceed, reason, estimatedCost } =
+        await checkUsageLimit(duration);
+      if (!canProceed) {
+        onError(reason || "利用制限に達しました");
+        return;
+      }
+
+      setIsUploading(true);
+      setProgressPercentage(0);
+      setUploadProgress("アップロードの準備中...");
 
       // 1. S3に直接アップロード
       setUploadProgress("ファイルをアップロード中...");
@@ -242,35 +312,30 @@ export default function FileUploader({
 
       // アップロード完了を確認
       await waitForUpload(fileUrl);
-      setProgressPercentage(10);
+      setProgressPercentage(20);
 
-      // 2. 文字起こし処理
-      setUploadProgress("文字起こしを開始します...");
-      try {
-        const result = await transcribe(fileUrl);
-        setProgressPercentage(30);
+      // 2. 文字起こしを実行
+      const { text, timestamps } = await transcribe(fileUrl);
+      setProgressPercentage(60);
 
-        // 校正開始時刻を記録
-        setCorrectionStartTime(Date.now());
+      // 3. 利用記録を保存
+      await recordUsage({
+        userId: "anonymous", // または適切なユーザーID
+        audioDuration: Math.ceil(duration),
+        whisperCost: estimatedCost.whisper,
+        chatgptCost: estimatedCost.chatgpt,
+      });
 
-        onTranscriptionComplete(
-          result.text,
-          result.timestamps,
-          selectedFile.size
-        );
-      } catch (error) {
-        // エラーメッセージを適切に処理
-        const errorMessage =
-          error instanceof Error ? error.message : "エラーが発生しました";
-        onError(errorMessage);
-        throw error; // エラーを再スローしてfinally句を実行
-      }
+      // 4. 料金表示を更新
+      await refetchDailyUsage();
+
+      // 5. 完了コールバックを呼び出し
+      onTranscriptionComplete(text, timestamps, selectedFile.size);
     } catch (error) {
-      console.error("Error:", error);
-      // エラーメッセージを適切に処理
-      const errorMessage =
-        error instanceof Error ? error.message : "エラーが発生しました";
-      onError(errorMessage);
+      console.error("Processing error:", error);
+      onError(
+        error instanceof Error ? error.message : "処理中にエラーが発生しました"
+      );
     } finally {
       setIsUploading(false);
       setUploadProgress("");
@@ -301,30 +366,6 @@ export default function FileUploader({
 
     // 4. 確認できなかった場合は待機処理へ
     return fileUrl;
-  };
-
-  const transcribe = async (fileUrl: string) => {
-    const response = await fetch("/api/transcribe", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ fileUrl }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      // エラーメッセージを適切に処理
-      if (response.status === 429) {
-        throw new Error(
-          error.error ||
-            "APIの利用制限に達しました。しばらく時間をおいて再度お試しください。"
-        );
-      }
-      throw new Error(error.error || "文字起こしに失敗しました");
-    }
-
-    return response.json();
   };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
