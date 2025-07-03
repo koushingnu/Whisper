@@ -138,24 +138,35 @@ export async function POST(request: NextRequest) {
     }
 
     console.error("Whisper API error:", error);
-    // エラーの詳細情報を取得
-    const errorDetails =
-      error instanceof Error
-        ? {
-            message: error.message,
-            name: error.name,
-            stack: error.stack,
-          }
-        : String(error);
 
-    console.error("Error details:", errorDetails);
+    // OpenAIのエラーを適切に処理
+    let errorMessage = "文字起こし処理中にエラーが発生しました";
+    let statusCode = 500;
+
+    if (error instanceof Error) {
+      // クォータ制限エラーの処理
+      if (error.message.includes("429") || error.message.includes("quota")) {
+        errorMessage =
+          "APIの利用制限に達しました。しばらく時間をおいて再度お試しください。";
+        statusCode = 429;
+      }
+
+      console.error("Error details:", {
+        message: error.message,
+        name: error.name,
+        stack: error.stack,
+      });
+    } else {
+      console.error("Unknown error:", error);
+    }
+
     return new Response(
       JSON.stringify({
-        error: "文字起こし処理中にエラーが発生しました",
-        details: errorDetails,
+        error: errorMessage,
+        details: error instanceof Error ? error.message : String(error),
       }),
       {
-        status: 500,
+        status: statusCode,
         headers: { "Content-Type": "application/json" },
       }
     );

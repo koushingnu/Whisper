@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 import { motion, AnimatePresence } from "framer-motion";
+import { TranscriptionStatus } from "@/lib/types";
 import {
   getAudioUploadUrl,
   uploadAudioToS3,
@@ -13,27 +14,155 @@ import {
 interface FileUploaderProps {
   onTranscriptionComplete: (
     text: string,
-    timestamps: { start: number; end: number }[]
+    timestamps: { start: number; end: number }[],
+    fileSize: number
   ) => void;
   onError: (error: string) => void;
   isProcessing: boolean;
+  progress: number;
+  status: TranscriptionStatus;
 }
 
 export default function FileUploader({
   onTranscriptionComplete,
   onError,
   isProcessing,
+  progress,
+  status,
 }: FileUploaderProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string>("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [audioDuration, setAudioDuration] = useState<number>(0);
+  const [correctionStartTime, setCorrectionStartTime] = useState<number>(0);
+  const [progressPercentage, setProgressPercentage] = useState<number>(0);
+  const [showProgressBar, setShowProgressBar] = useState(false);
 
   // 処理中の状態を統合
   const isProcessingState = isUploading || isProcessing;
+
+  // 進捗状態の計算と更新
+  useEffect(() => {
+    let progressInterval: NodeJS.Timeout | null = null;
+
+    const updateProgress = () => {
+      let newProgress = 0;
+
+      if (status === "completed") {
+        newProgress = 100;
+        setShowProgressBar(true);
+      } else if (status === "error") {
+        newProgress = progressPercentage;
+      } else if (isUploading) {
+        // ファイルアップロード中は0-10%
+        newProgress = Math.min(10, progress);
+        setShowProgressBar(true);
+      } else if (status === "transcribing") {
+        // 文字起こし中は10-30%
+        newProgress = 10 + Math.min((progress / 100) * 20, 20);
+        setShowProgressBar(true);
+      } else if (status === "correcting") {
+        setShowProgressBar(true);
+        // 校正中は30-99%
+        if (audioDuration === 0) {
+          newProgress = 30 + Math.min((progress / 100) * 69, 69);
+        } else {
+          // 進捗スピードを調整
+          // 9分のファイルで1分40秒を基準に、より早く進むように調整
+          const baseSpeed = 2.5; // 基準速度を上げる（元の1.67から2.5に）
+          const expectedDuration = (audioDuration / 60) * (100 / 9) * baseSpeed;
+          const elapsedTime = (Date.now() - correctionStartTime) / 1000;
+          const calculatedProgress = (elapsedTime / expectedDuration) * 69;
+          newProgress = 30 + Math.min(calculatedProgress, 69);
+
+          // 1秒ごとに進捗を更新（より頻繁に更新）
+          if (!progressInterval) {
+            progressInterval = setInterval(() => {
+              const currentElapsedTime =
+                (Date.now() - correctionStartTime) / 1000;
+              const currentProgress =
+                (currentElapsedTime / expectedDuration) * 69;
+              // 進捗の加速を追加
+              const acceleratedProgress = currentProgress * 1.2; // 20%加速
+              const totalProgress = 30 + Math.min(acceleratedProgress, 69);
+
+              setProgressPercentage(Math.round(totalProgress));
+
+              // 99%に達したら停止
+              if (totalProgress >= 99) {
+                if (progressInterval) {
+                  clearInterval(progressInterval);
+                }
+              }
+            }, 500); // 更新間隔を500msに短縮
+          }
+        }
+      } else {
+        setShowProgressBar(false);
+      }
+
+      setProgressPercentage(Math.round(newProgress));
+    };
+
+    updateProgress();
+
+    // クリーンアップ関数
+    return () => {
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
+    };
+  }, [status, progress, isUploading, audioDuration, correctionStartTime]);
+
+  // 進捗メッセージの取得
   const getProgressMessage = () => {
-    if (isProcessing) return "文字起こしと校正を実行中...";
-    if (uploadProgress) return uploadProgress;
+    if (status === "completed") return "完了";
+    if (status === "error") return "エラーが発生しました";
+    if (isUploading) return uploadProgress || "アップロード中...";
+    if (status === "transcribing") return "文字起こしを実行中...";
+    if (status === "correcting") {
+      const remainingTime = calculateRemainingTime();
+      return `校正を実行中... (残り約${remainingTime})`;
+    }
     return "処理中...";
+  };
+
+  // 残り時間の計算
+  const calculateRemainingTime = () => {
+    if (status !== "correcting" || audioDuration === 0) return "";
+
+    const expectedDuration = (audioDuration / 60) * (100 / 9) * 1.67;
+    const elapsedTime = (Date.now() - correctionStartTime) / 1000;
+    const remainingSeconds = Math.max(0, expectedDuration - elapsedTime);
+
+    if (remainingSeconds < 60) {
+      return `${Math.round(remainingSeconds)}秒`;
+    } else {
+      const minutes = Math.floor(remainingSeconds / 60);
+      const seconds = Math.round(remainingSeconds % 60);
+      return `${minutes}分${seconds}秒`;
+    }
+  };
+
+  // 音声ファイルの長さを取得
+  const getAudioDuration = (file: File): Promise<number> => {
+    return new Promise((resolve) => {
+      const audio = new Audio();
+      const reader = new FileReader();
+
+      reader.onload = (e) => {
+        if (e.target?.result) {
+          audio.src = e.target.result as string;
+          audio.onloadedmetadata = () => {
+            resolve(audio.duration);
+          };
+        } else {
+          resolve(0);
+        }
+      };
+
+      reader.readAsDataURL(file);
+    });
   };
 
   // ファイルの存在を確認する関数
@@ -79,25 +208,49 @@ export default function FileUploader({
     if (!selectedFile) return;
 
     setIsUploading(true);
+    setProgressPercentage(0);
     setUploadProgress("アップロードの準備中...");
+
     try {
+      // 音声ファイルの長さを取得
+      const duration = await getAudioDuration(selectedFile);
+      setAudioDuration(duration);
+
       // 1. S3に直接アップロード
       setUploadProgress("ファイルをアップロード中...");
       const fileUrl = await uploadToS3(selectedFile);
 
       // アップロード完了を確認
       await waitForUpload(fileUrl);
+      setProgressPercentage(10);
 
       // 2. 文字起こし処理
       setUploadProgress("文字起こしを開始します...");
-      const result = await transcribe(fileUrl);
+      try {
+        const result = await transcribe(fileUrl);
+        setProgressPercentage(30);
 
-      // 校正後のテキストのみを表示するため、ここでは何もしない
-      // 校正処理は親コンポーネントで行われ、その結果のみが表示される
-      onTranscriptionComplete(result.text, result.timestamps);
+        // 校正開始時刻を記録
+        setCorrectionStartTime(Date.now());
+
+        onTranscriptionComplete(
+          result.text,
+          result.timestamps,
+          selectedFile.size
+        );
+      } catch (error) {
+        // エラーメッセージを適切に処理
+        const errorMessage =
+          error instanceof Error ? error.message : "エラーが発生しました";
+        onError(errorMessage);
+        throw error; // エラーを再スローしてfinally句を実行
+      }
     } catch (error) {
       console.error("Error:", error);
-      onError(error instanceof Error ? error.message : "エラーが発生しました");
+      // エラーメッセージを適切に処理
+      const errorMessage =
+        error instanceof Error ? error.message : "エラーが発生しました";
+      onError(errorMessage);
     } finally {
       setIsUploading(false);
       setUploadProgress("");
@@ -141,6 +294,13 @@ export default function FileUploader({
 
     if (!response.ok) {
       const error = await response.json();
+      // エラーメッセージを適切に処理
+      if (response.status === 429) {
+        throw new Error(
+          error.error ||
+            "APIの利用制限に達しました。しばらく時間をおいて再度お試しください。"
+        );
+      }
       throw new Error(error.error || "文字起こしに失敗しました");
     }
 
@@ -162,113 +322,134 @@ export default function FileUploader({
     noDrag: isProcessingState,
   });
 
-  const handleCancel = () => {
-    if (isProcessingState) return;
-    setSelectedFile(null);
-    setUploadProgress("");
-  };
-
   return (
     <div className="space-y-4">
       <div
         {...getRootProps()}
-        className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+        className={`relative overflow-hidden border-2 border-dashed rounded-2xl p-12 text-center transition-all ${
           isProcessingState
             ? "border-gray-300 bg-gray-50 cursor-not-allowed"
             : isDragActive
               ? "border-blue-500 bg-blue-50"
-              : "border-gray-300 hover:border-gray-400 cursor-pointer"
+              : "border-gray-300 hover:border-blue-400 hover:bg-blue-50 cursor-pointer"
         }`}
       >
         <input {...getInputProps()} disabled={isProcessingState} />
-        <AnimatePresence mode="wait">
+
+        <div className="space-y-4">
           {isProcessingState ? (
             <motion.div
-              key="uploading"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="space-y-2"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="space-y-4"
             >
-              <p className="text-gray-600">{getProgressMessage()}</p>
-              <div className="w-full max-w-md mx-auto h-2 bg-gray-200 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500 animate-pulse"></div>
+              <div className="flex flex-col items-center justify-center space-y-3">
+                {status !== "completed" && (
+                  <motion.svg
+                    className="w-12 h-12 text-blue-500"
+                    animate={{ rotate: -360 }}
+                    transition={{
+                      duration: 1,
+                      repeat: Infinity,
+                      ease: "linear",
+                    }}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    />
+                  </motion.svg>
+                )}
+                <div className="text-base font-medium text-gray-600">
+                  {getProgressMessage()}
+                </div>
               </div>
             </motion.div>
-          ) : selectedFile ? (
-            <motion.div
-              key="selected"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="space-y-2"
-            >
-              <p className="text-green-600">
-                選択されたファイル: {selectedFile.name}
-              </p>
-              <p className="text-sm text-gray-500">
-                クリックまたはドロップで選び直せます
-              </p>
-            </motion.div>
-          ) : isDragActive ? (
-            <motion.p
-              key="drag"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="text-blue-500"
-            >
-              ここにファイルをドロップしてください
-            </motion.p>
           ) : (
-            <motion.div
-              key="default"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="space-y-2"
-            >
-              <p className="text-gray-600">
-                クリックまたはドラッグ＆ドロップで
-                <br />
-                音声ファイルを選択してください
-              </p>
-              <p className="text-sm text-gray-500">
-                対応形式: MP3, WAV, M4A, OGG, WebM, AAC
-                <br />
-                最大サイズ: 25MB
-              </p>
-            </motion.div>
+            <div className="flex flex-col items-center justify-center space-y-2">
+              <svg
+                className={`w-12 h-12 ${
+                  isDragActive ? "text-blue-500" : "text-gray-400"
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"
+                />
+              </svg>
+
+              <div className="flex flex-col space-y-1 text-sm">
+                <span
+                  className={`font-medium ${
+                    isDragActive ? "text-blue-500" : "text-gray-500"
+                  }`}
+                >
+                  {isDragActive
+                    ? "ファイルをドロップしてください"
+                    : selectedFile
+                      ? selectedFile.name
+                      : "クリックまたはドラッグ＆ドロップでファイルを選択"}
+                </span>
+                <span className="text-gray-400">
+                  最大25MB（mp3, wav, m4a, ogg, webm, aac）
+                </span>
+              </div>
+            </div>
           )}
-        </AnimatePresence>
+
+          {selectedFile && !isProcessingState && (
+            <motion.button
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleProcessFile();
+              }}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+            >
+              文字起こしを開始
+            </motion.button>
+          )}
+        </div>
       </div>
 
-      {selectedFile && !isProcessingState && (
-        <div className="flex justify-center space-x-4 mt-4">
-          <button
-            onClick={handleProcessFile}
-            disabled={!selectedFile || isProcessingState}
-            className={`px-4 py-2 rounded-md text-white ${
-              !selectedFile || isProcessingState
-                ? "bg-gray-400 cursor-not-allowed"
-                : "bg-blue-500 hover:bg-blue-600"
-            }`}
+      {/* 進捗バーを別コンポーネントとして切り出し */}
+      <AnimatePresence>
+        {(showProgressBar || status === "completed") && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden"
           >
-            文字起こしを開始
-          </button>
-          <button
-            onClick={handleCancel}
-            disabled={isProcessingState}
-            className={`px-4 py-2 rounded-md ${
-              isProcessingState
-                ? "bg-gray-400 text-white cursor-not-allowed"
-                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-            }`}
-          >
-            キャンセル
-          </button>
-        </div>
-      )}
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${progressPercentage}%` }}
+              transition={{ duration: 0.5 }}
+              className={`h-full rounded-full ${
+                status === "error"
+                  ? "bg-red-500"
+                  : status === "completed"
+                    ? "bg-green-500"
+                    : "bg-gradient-to-r from-blue-500 to-blue-600"
+              }`}
+            />
+            <div className="text-sm font-medium text-gray-500 mt-1 text-center">
+              {progressPercentage}%
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

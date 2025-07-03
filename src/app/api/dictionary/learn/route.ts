@@ -1,98 +1,122 @@
 import { NextRequest } from "next/server";
 import { supabase } from "@/lib/supabase";
 
-// 単語レベルの差分を抽出する関数
-function extractWordDifferences(
-  original: string,
-  edited: string
-): { incorrect: string; correct: string }[] {
-  // 簡単な前処理
-  const cleanText = (text: string) => text.trim().replace(/\s+/g, " ");
-  const originalWords = cleanText(original).split(" ");
-  const editedWords = cleanText(edited).split(" ");
-
-  const differences: { incorrect: string; correct: string }[] = [];
-
-  // 最長共通部分列を使用して差分を検出
-  let i = 0;
-  let j = 0;
-
-  while (i < originalWords.length && j < editedWords.length) {
-    if (originalWords[i] !== editedWords[j]) {
-      // 単純な1単語の置換として扱う
-      differences.push({
-        incorrect: originalWords[i],
-        correct: editedWords[j],
-      });
-      i++;
-      j++;
-    } else {
-      i++;
-      j++;
-    }
-  }
-
-  return differences;
+interface DictionaryChange {
+  incorrect: string;
+  correct: string;
+  category?: string;
 }
 
 export async function POST(request: NextRequest) {
   try {
     const { changes } = await request.json();
 
-    if (!Array.isArray(changes)) {
-      return new Response(JSON.stringify({ error: "Invalid input format" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
+    if (!Array.isArray(changes) || changes.length === 0) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Invalid input format",
+          details: "Changes must be a non-empty array",
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
 
-    const dictionaryUpdates: { incorrect: string; correct: string }[] = [];
-
-    // 各変更から単語レベルの差分を抽出
-    changes.forEach((change) => {
-      if (!change.original || !change.edited) {
-        throw new Error("Missing original or edited text");
-      }
-      const differences = extractWordDifferences(
-        change.original,
-        change.edited
-      );
-      dictionaryUpdates.push(...differences);
+    // バリデーション
+    const validChanges = changes.filter((change: DictionaryChange) => {
+      if (!change.incorrect || !change.correct) return false;
+      if (change.incorrect === change.correct) return false;
+      if (
+        typeof change.incorrect !== "string" ||
+        typeof change.correct !== "string"
+      )
+        return false;
+      return true;
     });
 
+    if (validChanges.length === 0) {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "No valid changes to process",
+          updatedEntries: 0,
+          updates: [],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
     // 重複を除去
-    const uniqueUpdates = dictionaryUpdates.filter(
-      (update, index, self) =>
+    const uniqueChanges = validChanges.filter(
+      (change, index, self) =>
         index ===
         self.findIndex(
-          (t) =>
-            t.incorrect === update.incorrect && t.correct === update.correct
+          (c) =>
+            c.incorrect === change.incorrect && c.correct === change.correct
         )
     );
 
-    // 辞書に追加
-    if (uniqueUpdates.length > 0) {
-      const { error } = await supabase.from("dictionary").upsert(
-        uniqueUpdates.map((update) => ({
-          incorrect: update.incorrect,
-          correct: update.correct,
-          category: "自動学習",
-          created_at: new Date().toISOString(),
-        })),
-        { onConflict: "incorrect" }
-      );
+    // 既存のエントリーをチェック
+    for (const change of uniqueChanges) {
+      const { data: existingEntries } = await supabase
+        .from("dictionary")
+        .select("*")
+        .eq("incorrect", change.incorrect.trim())
+        .eq("correct", change.correct.trim());
 
-      if (error) {
-        console.error("Supabase error:", error);
-        throw error;
+      if (existingEntries && existingEntries.length > 0) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: "Duplicate entry",
+            details: "この修正内容は既に辞書に登録されています",
+            existingEntry: existingEntries[0],
+          }),
+          {
+            status: 409, // Conflict
+            headers: { "Content-Type": "application/json" },
+          }
+        );
       }
+    }
+
+    // データベースに保存
+    const { data, error } = await supabase.from("dictionary").insert(
+      uniqueChanges.map((change) => ({
+        incorrect: change.incorrect.trim(),
+        correct: change.correct.trim(),
+        category: change.category || "自動学習",
+        created_at: new Date().toISOString(),
+      }))
+    );
+
+    if (error) {
+      console.error("Database error:", error);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Failed to update dictionary",
+          details: error.message,
+          code: error.code,
+        }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
 
     return new Response(
       JSON.stringify({
         success: true,
-        updatedEntries: uniqueUpdates.length,
-        updates: uniqueUpdates,
+        updatedEntries: uniqueChanges.length,
+        updates: uniqueChanges,
       }),
       {
         status: 200,
@@ -103,7 +127,8 @@ export async function POST(request: NextRequest) {
     console.error("Dictionary learning error:", error);
     return new Response(
       JSON.stringify({
-        error: "Failed to update dictionary",
+        success: false,
+        error: "Failed to process request",
         details: error instanceof Error ? error.message : String(error),
       }),
       {

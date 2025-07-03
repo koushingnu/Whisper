@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { DiffModal } from "./DiffModal";
+import { motion, AnimatePresence } from "framer-motion";
+import { formatText } from "@/lib/utils/text";
 
 interface TextEditorProps {
   initialText: string;
@@ -11,7 +13,6 @@ interface TextEditorProps {
 interface LineData {
   id: number;
   text: string;
-  isEditing: boolean;
   originalText: string;
 }
 
@@ -20,29 +21,65 @@ interface TextDiff {
   afterText: string;
 }
 
+interface NotificationProps {
+  message: string;
+  type: "success" | "info" | "warning" | "error";
+  onClose: () => void;
+}
+
+// 通知メッセージコンポーネント
+const Notification = ({ message, type, onClose }: NotificationProps) => {
+  const styles = {
+    success: "bg-green-100 border-green-400 text-green-700",
+    info: "bg-blue-100 border-blue-400 text-blue-700",
+    warning: "bg-yellow-100 border-yellow-400 text-yellow-700",
+    error: "bg-red-100 border-red-400 text-red-700",
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className={`fixed top-4 right-4 border px-4 py-3 rounded-lg shadow-lg flex items-center space-x-2 z-50 ${styles[type]}`}
+    >
+      <div className="flex-1">{message}</div>
+      <button
+        onClick={onClose}
+        className={`hover:opacity-75 focus:outline-none`}
+      >
+        <svg
+          className="h-4 w-4"
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+      </button>
+    </motion.div>
+  );
+};
+
 export function TextEditor({ initialText, readOnly }: TextEditorProps) {
   const [lines, setLines] = useState<LineData[]>([]);
   const [showDiffModal, setShowDiffModal] = useState(false);
-  const [currentDiffIndex, setCurrentDiffIndex] = useState(0);
-  const [textDiffs, setTextDiffs] = useState<TextDiff[]>([]);
-  const textareaRefs = useRef<{ [key: number]: HTMLTextAreaElement | null }>(
-    {}
-  );
-
-  // テキストエリアの参照を設定する関数
-  const setTextareaRef = (
-    lineId: number,
-    element: HTMLTextAreaElement | null
-  ) => {
-    textareaRefs.current[lineId] = element;
-  };
+  const [selectedText, setSelectedText] = useState("");
+  const [selectedLineId, setSelectedLineId] = useState<number | null>(null);
+  const [notification, setNotification] = useState<{
+    show: boolean;
+    message: string;
+    type: "success" | "info" | "warning" | "error";
+  }>({ show: false, message: "", type: "success" });
 
   // テキストを行に分割する関数
   const splitIntoLines = (text: string): LineData[] => {
     return text.split("\n").map((line, index) => ({
       id: index,
       text: line,
-      isEditing: false,
       originalText: line,
     }));
   };
@@ -54,173 +91,38 @@ export function TextEditor({ initialText, readOnly }: TextEditorProps) {
     setLines(splitIntoLines(formattedText));
   }, [initialText]);
 
-  // テキストを整形する関数
-  const formatText = (text: string): string => {
-    if (!text) return "";
+  // テキスト選択時の処理
+  const handleTextSelection = (lineId: number) => {
+    if (readOnly) return;
 
-    let formatted = text
-      .trim()
-      .replace(/\n+/g, "\n")
-      .replace(/[ 　]+/g, " ")
-      .replace(/([。！？、]) /g, "$1");
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
 
-    formatted = formatted
-      .replace(/([。！？])(?![」』）\)])/g, "$1\n")
-      .replace(/([、])(?![」』）\)])/g, "$1 ");
+    const selectedText = selection.toString().trim();
+    if (!selectedText) return;
 
-    return formatted;
-  };
-
-  // 行の編集を開始
-  const handleEditLine = (lineId: number) => {
-    setLines((prev) =>
-      prev.map((line) =>
-        line.id === lineId ? { ...line, isEditing: true } : line
-      )
-    );
-  };
-
-  // 行の編集をキャンセル
-  const handleCancelEdit = (lineId: number) => {
-    setLines((prev) =>
-      prev.map((line) =>
-        line.id === lineId
-          ? { ...line, isEditing: false, text: line.originalText }
-          : line
-      )
-    );
-  };
-
-  // 修正箇所の前後のコンテキストを抽出する関数
-  const extractContext = (
-    text: string,
-    modifiedText: string
-  ): { before: string; after: string } => {
-    // 日本語の文字（漢字、ひらがな、カタカナ）、英数字、記号で分割
-    const splitPattern =
-      /([一-龯ぁ-んァ-ヶー々〆〤ヽヾ゛゜a-zA-Z0-9]+|[、。！？．，\s])/g;
-    const words = text.match(splitPattern) || [];
-    const modifiedWords = modifiedText.match(splitPattern) || [];
-
-    let startIndex = 0;
-    let endIndex = words.length - 1;
-    let modifiedStartIndex = 0;
-    let modifiedEndIndex = modifiedWords.length - 1;
-
-    // 先頭から一致する部分をスキップ
-    while (
-      startIndex < words.length &&
-      modifiedStartIndex < modifiedWords.length &&
-      words[startIndex] === modifiedWords[modifiedStartIndex]
-    ) {
-      startIndex++;
-      modifiedStartIndex++;
-    }
-
-    // 末尾から一致する部分をスキップ
-    while (
-      endIndex > startIndex &&
-      modifiedEndIndex > modifiedStartIndex &&
-      words[endIndex] === modifiedWords[modifiedEndIndex]
-    ) {
-      endIndex--;
-      modifiedEndIndex--;
-    }
-
-    // 前後のコンテキストを含めて抽出（句読点で区切られた単位で）
-    const contextSize = 3; // 前後3文節まで含める
-    let beforeStart = startIndex;
-    let afterEnd = endIndex;
-    let modifiedBeforeStart = modifiedStartIndex;
-    let modifiedAfterEnd = modifiedEndIndex;
-
-    // 前方のコンテキストを探す
-    let sentenceCount = 0;
-    for (let i = startIndex - 1; i >= 0 && sentenceCount < contextSize; i--) {
-      beforeStart = i;
-      if (/[。！？]/.test(words[i])) {
-        sentenceCount++;
-      }
-    }
-
-    // 後方のコンテキストを探す
-    sentenceCount = 0;
-    for (
-      let i = endIndex + 1;
-      i < words.length && sentenceCount < contextSize;
-      i++
-    ) {
-      afterEnd = i;
-      if (/[。！？]/.test(words[i])) {
-        sentenceCount++;
-      }
-    }
-
-    // 修正後のテキストも同様に処理
-    sentenceCount = 0;
-    for (
-      let i = modifiedStartIndex - 1;
-      i >= 0 && sentenceCount < contextSize;
-      i--
-    ) {
-      modifiedBeforeStart = i;
-      if (/[。！？]/.test(modifiedWords[i])) {
-        sentenceCount++;
-      }
-    }
-
-    sentenceCount = 0;
-    for (
-      let i = modifiedEndIndex + 1;
-      i < modifiedWords.length && sentenceCount < contextSize;
-      i++
-    ) {
-      modifiedAfterEnd = i;
-      if (/[。！？]/.test(modifiedWords[i])) {
-        sentenceCount++;
-      }
-    }
-
-    return {
-      before: words.slice(beforeStart, afterEnd + 1).join(""),
-      after: modifiedWords
-        .slice(modifiedBeforeStart, modifiedAfterEnd + 1)
-        .join(""),
-    };
-  };
-
-  // 行の変更を保存
-  const handleSaveLine = (lineId: number) => {
-    setLines((prev) => {
-      const updatedLines = prev.map((line) =>
-        line.id === lineId ? { ...line, isEditing: false } : line
-      );
-
-      // 変更を検出して差分配列に追加
-      const changedLine = prev.find((l) => l.id === lineId);
-      if (changedLine && changedLine.text !== changedLine.originalText) {
-        const { before, after } = extractContext(
-          changedLine.originalText,
-          changedLine.text
-        );
-        setTextDiffs([
-          {
-            beforeText: before,
-            afterText: after,
-          },
-        ]);
-        setCurrentDiffIndex(0);
-        setShowDiffModal(true);
-      }
-
-      return updatedLines;
-    });
+    setSelectedText(selectedText);
+    setSelectedLineId(lineId);
+    setShowDiffModal(true);
   };
 
   // 差分モーダルでの確定処理
   const handleConfirmDiff = async (beforeText: string, afterText: string) => {
     try {
-      // 辞書に保存
+      if (beforeText === afterText) {
+        setShowDiffModal(false);
+        // 同じテキストの場合は通知を表示
+        setNotification({
+          show: true,
+          message: "修正前と修正後が同じです",
+          type: "info",
+        });
+        setTimeout(() => {
+          setNotification((prev) => ({ ...prev, show: false }));
+        }, 3000);
+        return;
+      }
+
       const response = await fetch("/api/dictionary/learn", {
         method: "POST",
         headers: {
@@ -229,140 +131,128 @@ export function TextEditor({ initialText, readOnly }: TextEditorProps) {
         body: JSON.stringify({
           changes: [
             {
-              original: beforeText,
-              edited: afterText,
+              incorrect: beforeText,
+              correct: afterText,
+              category: "ユーザー修正",
             },
           ],
         }),
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error("Dictionary update failed:", errorData);
-        throw new Error(errorData.error || "Failed to update dictionary");
+        // 重複エントリーの場合は特別なメッセージを表示
+        if (response.status === 409) {
+          setShowDiffModal(false);
+          setNotification({
+            show: true,
+            message: data.details || "この修正内容は既に登録されています",
+            type: "warning",
+          });
+          setTimeout(() => {
+            setNotification((prev) => ({ ...prev, show: false }));
+          }, 3000);
+          return;
+        }
+
+        throw new Error(
+          `Dictionary update failed: ${data.details || data.error || "Unknown error"}`
+        );
       }
 
-      const result = await response.json();
-      console.log("Dictionary update result:", result);
+      if (!data.success) {
+        throw new Error(data.message || "Failed to update dictionary");
+      }
+
+      // テキストを更新
+      if (selectedLineId !== null) {
+        setLines((prev) =>
+          prev.map((line) =>
+            line.id === selectedLineId
+              ? {
+                  ...line,
+                  text: line.text.replace(beforeText, afterText),
+                  originalText: line.text.replace(beforeText, afterText),
+                }
+              : line
+          )
+        );
+      }
 
       // モーダルを閉じる
       setShowDiffModal(false);
-      setTextDiffs([]);
-      setCurrentDiffIndex(0);
+      setSelectedText("");
+      setSelectedLineId(null);
 
-      // 変更を確定
-      setLines((prev) =>
-        prev.map((line) =>
-          line.text !== line.originalText
-            ? { ...line, originalText: line.text }
-            : line
-        )
-      );
+      // 成功メッセージを表示
+      setNotification({
+        show: true,
+        message: "辞書を更新しました",
+        type: "success",
+      });
+      setTimeout(() => {
+        setNotification((prev) => ({ ...prev, show: false }));
+      }, 3000);
     } catch (error) {
-      console.error("Failed to save changes to dictionary:", error);
-      alert(
-        "辞書の更新に失敗しました: " +
-          (error instanceof Error ? error.message : String(error))
-      );
+      console.error("Error updating dictionary:", error);
+      setNotification({
+        show: true,
+        message:
+          error instanceof Error ? error.message : "辞書の更新に失敗しました",
+        type: "error",
+      });
+      setTimeout(() => {
+        setNotification((prev) => ({ ...prev, show: false }));
+      }, 3000);
     }
   };
 
   // モーダルを閉じる
   const handleCloseDiffModal = () => {
-    // 編集をキャンセルして元の状態に戻す
-    setLines((prev) =>
-      prev.map((line) =>
-        line.text !== line.originalText
-          ? { ...line, text: line.originalText }
-          : line
-      )
-    );
     setShowDiffModal(false);
-    setTextDiffs([]);
-    setCurrentDiffIndex(0);
-  };
-
-  // テキストエリアの高さを自動調整
-  const adjustTextareaHeight = (textarea: HTMLTextAreaElement) => {
-    textarea.style.height = "auto";
-    textarea.style.height = `${textarea.scrollHeight}px`;
-  };
-
-  // 行のテキスト変更時の処理
-  const handleLineChange = (lineId: number, value: string) => {
-    setLines((prev) =>
-      prev.map((line) => (line.id === lineId ? { ...line, text: value } : line))
-    );
-
-    if (textareaRefs.current[lineId]) {
-      adjustTextareaHeight(textareaRefs.current[lineId]!);
-    }
+    setSelectedText("");
+    setSelectedLineId(null);
   };
 
   return (
     <div className="space-y-4">
-      <div className="space-y-2">
+      <AnimatePresence>
+        {notification.show && (
+          <Notification
+            message={notification.message}
+            type={notification.type}
+            onClose={() =>
+              setNotification((prev) => ({ ...prev, show: false }))
+            }
+          />
+        )}
+      </AnimatePresence>
+
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="space-y-0.5"
+      >
         {lines.map((line) => (
-          <div key={line.id} className="relative group">
-            {line.isEditing ? (
-              <div className="flex items-start space-x-2">
-                <textarea
-                  ref={(el) => setTextareaRef(line.id, el)}
-                  value={line.text}
-                  onChange={(e) => handleLineChange(line.id, e.target.value)}
-                  className="flex-1 p-2 border rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  style={{
-                    minHeight: "2.5rem",
-                    lineHeight: "1.8",
-                    letterSpacing: "0.5px",
-                    fontFamily: "'Noto Sans JP', sans-serif",
-                    fontSize: "16px",
-                    resize: "none",
-                  }}
-                  onFocus={(e) => adjustTextareaHeight(e.target)}
-                />
-                <div className="flex space-x-1">
-                  <button
-                    onClick={() => handleSaveLine(line.id)}
-                    className="px-2 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
-                  >
-                    保存
-                  </button>
-                  <button
-                    onClick={() => handleCancelEdit(line.id)}
-                    className="px-2 py-1 text-sm bg-gray-500 text-white rounded hover:bg-gray-600"
-                  >
-                    キャンセル
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center group relative">
-                <p className="flex-1 p-2 pr-24 rounded-lg hover:bg-gray-50">
-                  {line.text}
-                </p>
-                {!readOnly && (
-                  <button
-                    onClick={() => handleEditLine(line.id)}
-                    className="opacity-0 group-hover:opacity-100 absolute right-2 px-4 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition-opacity"
-                  >
-                    編集
-                  </button>
-                )}
-              </div>
-            )}
+          <div
+            key={line.id}
+            className="group relative bg-white rounded-lg py-1.5 px-4 hover:bg-gray-50 transition-colors"
+            onMouseUp={() => handleTextSelection(line.id)}
+          >
+            <p className="text-base leading-snug text-gray-800">{line.text}</p>
           </div>
         ))}
-      </div>
+      </motion.div>
 
-      {/* 差分確認モーダル */}
-      <DiffModal
-        isOpen={showDiffModal}
-        beforeText={textDiffs[currentDiffIndex]?.beforeText || ""}
-        afterText={textDiffs[currentDiffIndex]?.afterText || ""}
-        onConfirm={handleConfirmDiff}
-        onClose={handleCloseDiffModal}
-      />
+      {showDiffModal && (
+        <DiffModal
+          beforeText={selectedText}
+          afterText={selectedText}
+          onConfirm={handleConfirmDiff}
+          onClose={handleCloseDiffModal}
+        />
+      )}
     </div>
   );
 }
