@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { DAILY_USAGE_LIMIT } from "@/lib/constants";
 
 export type DailyUsage = {
   total_whisper_cost: number;
@@ -65,7 +66,7 @@ export function useDailyUsage() {
     dailyUsage,
     isLoading,
     error,
-    remainingBudget: 1000 - dailyUsage.total_cost, // 1日の制限額（1000円）から現在の利用額を引く
-    refetch: fetchDailyUsage, // 手動更新用の関数を公開
+    remainingBudget: DAILY_USAGE_LIMIT - dailyUsage.total_cost,
+    refetch: fetchDailyUsage,
   };
 }
