@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import FileUploader from "./components/FileUploader";
-import { ProgressBar } from "./components/ProgressBar";
+
 import { TextEditor } from "./components/TextEditor";
 import { TranscriptionStatus, TranscriptionResult } from "@/lib/types";
 import GlossaryEditor from "./components/GlossaryEditor";

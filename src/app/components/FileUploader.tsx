@@ -112,7 +112,14 @@ export default function FileUploader({
         clearInterval(progressInterval);
       }
     };
-  }, [status, progress, isUploading, audioDuration, correctionStartTime]);
+  }, [
+    status,
+    progress,
+    isUploading,
+    audioDuration,
+    correctionStartTime,
+    progressPercentage,
+  ]);
 
   // 進捗メッセージの取得
   const getProgressMessage = () => {

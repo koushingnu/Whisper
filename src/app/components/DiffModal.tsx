@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { diffWords } from "diff";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 
 interface DiffModalProps {
   beforeText: string;

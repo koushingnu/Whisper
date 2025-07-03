@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { DiffModal } from "./DiffModal";
 import { motion, AnimatePresence } from "framer-motion";
 import { formatText } from "@/lib/utils/text";
