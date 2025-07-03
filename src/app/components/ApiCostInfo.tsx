@@ -87,7 +87,7 @@ export function ActualCostInfo({ audioDuration }: { audioDuration: number }) {
 
   return (
     <div className="text-sm">
-      <div className="font-medium text-gray-700 mb-4">今回の利用料金</div>
+      <div className="nt-medium text-gray-700fo mb-4">今回の利用料金</div>
       <div className="space-y-3">
         <div className="text-xs text-gray-500">
           音声の長さ: {durationMinutes}分

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import FileUploader from "./components/FileUploader";
 import { TextEditor } from "./components/TextEditor";
 import { DailyUsageInfo } from "./components/DailyUsageInfo";
-import { ActualCostInfo } from "./components/ApiCostInfo";
+import ApiCostInfo, { ActualCostInfo } from "./components/ApiCostInfo";
 import { TranscriptionStatus, TranscriptionResult } from "@/lib/types";
 import { formatText } from "@/lib/utils/text";
 
@@ -145,65 +145,73 @@ export default function Home() {
         </p>
 
         <div className="flex gap-6">
-          {/* 左サイドバー - 料金表示 */}
+          {/* 左サイドバー - 参考価格 */}
           <div className="w-64 shrink-0">
-            <div className="sticky top-4 space-y-4">
+            <div className="sticky top-4">
+              {/* 1分あたりの参考価格 */}
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                <ActualCostInfo audioDuration={audioDuration} />
+                <ApiCostInfo showActualCost={false} />
               </div>
-              <DailyUsageInfo />
-              {/* 校正完了後に実際の料金を表示 */}
-              {transcriptionStatus === "completed" && audioDuration > 0 && (
-                <ActualCostInfo audioDuration={audioDuration} />
-              )}
             </div>
           </div>
 
           {/* メインコンテンツ */}
-          <div className="flex-1 max-w-3xl">
-            <div className="space-y-8">
+          <div className="flex-1">
+            <div className="space-y-6">
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                {transcriptionStatus === "completed" ? (
-                  <div className="flex justify-between items-center">
-                    <button
-                      onClick={handleReset}
-                      className="text-blue-600 hover:text-blue-700 flex items-center space-x-2 transition-colors duration-200"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 4v16m8-8H4"
-                        />
-                      </svg>
-                      <span>新しい文字起こしを開始</span>
-                    </button>
-
-                    <button
-                      onClick={handleDownload}
-                      className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center space-x-2"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                        />
-                      </svg>
-                      <span>ダウンロード</span>
-                    </button>
+                {transcriptionStatus === "completed" && transcriptionResult ? (
+                  <div className="space-y-6">
+                    <div className="flex justify-between items-center">
+                      <h2 className="text-xl font-semibold text-gray-800">
+                        文字起こし結果
+                      </h2>
+                      <div className="flex items-center space-x-4">
+                        <button
+                          onClick={handleReset}
+                          className="text-gray-600 hover:text-gray-800 flex items-center space-x-2 transition-colors"
+                        >
+                          <svg
+                            className="w-5 h-5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M12 4v16m8-8H4"
+                            />
+                          </svg>
+                          <span>新しい文字起こしを開始</span>
+                        </button>
+                        <button
+                          onClick={handleDownload}
+                          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                        >
+                          <svg
+                            className="w-5 h-5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                            />
+                          </svg>
+                          <span>ダウンロード</span>
+                        </button>
+                      </div>
+                    </div>
+                    <TextEditor
+                      initialText={transcriptionResult.text}
+                      readOnly={["transcribing", "correcting"].includes(
+                        transcriptionStatus
+                      )}
+                    />
                   </div>
                 ) : (
                   <FileUploader
@@ -221,46 +229,48 @@ export default function Home() {
                 )}
               </div>
 
-              {transcriptionStatus === "completed" && transcriptionResult && (
-                <div className="space-y-6">
-                  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                    <TextEditor
-                      initialText={transcriptionResult.text}
-                      readOnly={["transcribing", "correcting"].includes(
-                        transcriptionStatus
-                      )}
-                    />
+              {transcriptionStatus === "completed" &&
+                transcriptionResult &&
+                correctionResult && (
+                  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-6">
+                    <h2 className="text-xl font-semibold text-gray-800">
+                      校正情報
+                    </h2>
+                    {correctionResult.appliedRules && (
+                      <div className="space-y-2">
+                        <h3 className="font-medium text-gray-700">
+                          適用されたルール
+                        </h3>
+                        <p className="text-sm text-gray-600 bg-gray-50 p-4 rounded-lg whitespace-pre-wrap">
+                          {correctionResult.appliedRules}
+                        </p>
+                      </div>
+                    )}
+                    {correctionResult.otherCorrections && (
+                      <div className="space-y-2">
+                        <h3 className="font-medium text-gray-700">
+                          その他の修正
+                        </h3>
+                        <p className="text-sm text-gray-600 bg-gray-50 p-4 rounded-lg whitespace-pre-wrap">
+                          {correctionResult.otherCorrections}
+                        </p>
+                      </div>
+                    )}
                   </div>
+                )}
+            </div>
+          </div>
 
-                  {correctionResult && (
-                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-6">
-                      <h2 className="text-xl font-semibold text-gray-800">
-                        校正情報
-                      </h2>
-                      {correctionResult.appliedRules && (
-                        <div className="space-y-2">
-                          <h3 className="font-medium text-gray-700">
-                            適用されたルール
-                          </h3>
-                          <p className="text-sm text-gray-600 bg-gray-50 p-4 rounded-lg whitespace-pre-wrap">
-                            {correctionResult.appliedRules}
-                          </p>
-                        </div>
-                      )}
-                      {correctionResult.otherCorrections && (
-                        <div className="space-y-2">
-                          <h3 className="font-medium text-gray-700">
-                            その他の修正
-                          </h3>
-                          <p className="text-sm text-gray-600 bg-gray-50 p-4 rounded-lg whitespace-pre-wrap">
-                            {correctionResult.otherCorrections}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
+          {/* 右サイドバー - 利用料金と利用状況 */}
+          <div className="w-64 shrink-0">
+            <div className="sticky top-4 space-y-4">
+              {/* 今回の利用料金（処理中または完了時のみ表示） */}
+              {audioDuration > 0 && (
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                  <ActualCostInfo audioDuration={audioDuration} />
                 </div>
               )}
+              <DailyUsageInfo />
             </div>
           </div>
         </div>
