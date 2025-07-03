@@ -192,6 +192,7 @@ export default function Home() {
                 }
                 progress={progress}
                 status={transcriptionStatus}
+                error={error}
               />
             )}
           </div>

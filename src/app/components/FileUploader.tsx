@@ -21,6 +21,7 @@ interface FileUploaderProps {
   isProcessing: boolean;
   progress: number;
   status: TranscriptionStatus;
+  error: string | null;
 }
 
 export default function FileUploader({
@@ -29,6 +30,7 @@ export default function FileUploader({
   isProcessing,
   progress,
   status,
+  error,
 }: FileUploaderProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string>("");

@@ -16,11 +16,6 @@ interface LineData {
   originalText: string;
 }
 
-interface TextDiff {
-  beforeText: string;
-  afterText: string;
-}
-
 interface NotificationProps {
   message: string;
   type: "success" | "info" | "warning" | "error";
