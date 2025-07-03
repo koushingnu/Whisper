@@ -56,47 +56,46 @@ export default function FileUploader({
       } else if (status === "error") {
         newProgress = progressPercentage;
       } else if (isUploading) {
-        // ファイルアップロード中は0-10%
-        newProgress = Math.min(10, progress);
+        // ファイルアップロード中は0-20%
+        newProgress = Math.min(20, progress);
         setShowProgressBar(true);
       } else if (status === "transcribing") {
-        // 文字起こし中は10-30%
-        newProgress = 10 + Math.min((progress / 100) * 20, 20);
+        // 文字起こし中は20-60%
+        newProgress = 20 + Math.min((progress / 100) * 40, 40);
         setShowProgressBar(true);
       } else if (status === "correcting") {
         setShowProgressBar(true);
-        // 校正中は30-99%
+        // 校正中は60-99%
         if (audioDuration === 0) {
-          newProgress = 30 + Math.min((progress / 100) * 69, 69);
+          newProgress = 60 + Math.min((progress / 100) * 39, 39);
         } else {
           // 進捗スピードを調整
-          // 9分のファイルで1分40秒を基準に、より早く進むように調整
-          const baseSpeed = 2.5; // 基準速度を上げる（元の1.67から2.5に）
-          const expectedDuration = (audioDuration / 60) * (100 / 9) * baseSpeed;
+          // 音声の長さに基づいて校正時間を予測
+          // 1分あたり10秒を基準に計算（例：5分の音声なら50秒）
+          const baseSpeed = 10; // 1分あたりの秒数
+          const expectedDuration = (audioDuration / 60) * baseSpeed;
           const elapsedTime = (Date.now() - correctionStartTime) / 1000;
-          const calculatedProgress = (elapsedTime / expectedDuration) * 69;
-          newProgress = 30 + Math.min(calculatedProgress, 69);
+          const calculatedProgress = (elapsedTime / expectedDuration) * 39; // 60-99%の範囲で計算
+          newProgress = 60 + Math.min(calculatedProgress, 39);
 
-          // 1秒ごとに進捗を更新（より頻繁に更新）
+          // 2秒ごとに進捗を更新（パフォーマンス改善）
           if (!progressInterval) {
             progressInterval = setInterval(() => {
               const currentElapsedTime =
                 (Date.now() - correctionStartTime) / 1000;
               const currentProgress =
-                (currentElapsedTime / expectedDuration) * 69;
-              // 進捗の加速を追加
-              const acceleratedProgress = currentProgress * 1.2; // 20%加速
-              const totalProgress = 30 + Math.min(acceleratedProgress, 69);
+                (currentElapsedTime / expectedDuration) * 39;
+              const totalProgress = 60 + Math.min(currentProgress, 39);
 
               setProgressPercentage(Math.round(totalProgress));
 
-              // 99%に達したら停止
-              if (totalProgress >= 99) {
+              // 95%に達したら停止（余裕を持たせる）
+              if (totalProgress >= 95) {
                 if (progressInterval) {
                   clearInterval(progressInterval);
                 }
               }
-            }, 500); // 更新間隔を500msに短縮
+            }, 2000); // 更新間隔を2秒に延長
           }
         }
       } else {
@@ -131,7 +130,7 @@ export default function FileUploader({
     if (status === "transcribing") return "文字起こしを実行中...";
     if (status === "correcting") {
       const remainingTime = calculateRemainingTime();
-      return `校正を実行中... (残り約${remainingTime})`;
+      return `校正を実行中... ${remainingTime}`;
     }
     return "処理中...";
   };
@@ -140,16 +139,28 @@ export default function FileUploader({
   const calculateRemainingTime = () => {
     if (status !== "correcting" || audioDuration === 0) return "";
 
-    const expectedDuration = (audioDuration / 60) * (100 / 9) * 1.67;
+    // 音声1分あたり10秒で校正時間を計算
+    const baseSpeed = 10; // 1分あたりの秒数
+    const expectedDuration = (audioDuration / 60) * baseSpeed;
     const elapsedTime = (Date.now() - correctionStartTime) / 1000;
     const remainingSeconds = Math.max(0, expectedDuration - elapsedTime);
 
-    if (remainingSeconds < 60) {
-      return `${Math.round(remainingSeconds)}秒`;
+    // 進捗率から残り時間を調整（95%以上なら「まもなく完了」と表示）
+    if (progressPercentage >= 95) {
+      return "まもなく完了";
+    }
+
+    // 10秒未満の場合は「まもなく完了」と表示
+    if (remainingSeconds < 10) {
+      return "まもなく完了";
+    } else if (remainingSeconds < 60) {
+      // 60秒未満は秒数のみ表示
+      return `残り${Math.round(remainingSeconds)}秒`;
     } else {
+      // 1分以上は分と秒を表示
       const minutes = Math.floor(remainingSeconds / 60);
       const seconds = Math.round(remainingSeconds % 60);
-      return `${minutes}分${seconds}秒`;
+      return `残り${minutes}分${seconds}秒`;
     }
   };
 
@@ -439,22 +450,135 @@ export default function FileUploader({
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
-            className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden"
+            className="space-y-2"
           >
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${progressPercentage}%` }}
-              transition={{ duration: 0.5 }}
-              className={`h-full rounded-full ${
-                status === "error"
-                  ? "bg-red-500"
-                  : status === "completed"
-                    ? "bg-green-500"
-                    : "bg-gradient-to-r from-blue-500 to-blue-600"
-              }`}
-            />
-            <div className="text-sm font-medium text-gray-500 mt-1 text-center">
-              {progressPercentage}%
+            {/* ステータスと進捗率の表示 */}
+            <div className="flex justify-between items-center text-sm">
+              <div className="flex items-center space-x-2">
+                {status === "transcribing" && (
+                  <svg
+                    className="animate-spin h-4 w-4 text-blue-500"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                )}
+                {status === "correcting" && (
+                  <svg
+                    className="animate-spin h-4 w-4 text-indigo-500"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                )}
+                {status === "completed" && (
+                  <svg
+                    className="h-4 w-4 text-green-500"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M5 13l4 4L19 7"
+                    />
+                  </svg>
+                )}
+                <span
+                  className={`font-medium ${
+                    status === "error"
+                      ? "text-red-600"
+                      : status === "completed"
+                        ? "text-green-600"
+                        : status === "transcribing"
+                          ? "text-blue-600"
+                          : status === "correcting"
+                            ? "text-indigo-600"
+                            : "text-gray-600"
+                  }`}
+                >
+                  {getProgressMessage()}
+                </span>
+              </div>
+              <span className="font-semibold text-gray-700">
+                {progressPercentage}%
+              </span>
+            </div>
+
+            {/* プログレスバー */}
+            <div className="relative pt-1">
+              <div className="flex mb-2 items-center justify-between">
+                <div>
+                  <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-blue-600 bg-blue-200">
+                    {status === "transcribing"
+                      ? "文字起こし"
+                      : status === "correcting"
+                        ? "校正"
+                        : status === "completed"
+                          ? "完了"
+                          : "準備中"}
+                  </span>
+                </div>
+                {status === "correcting" && (
+                  <div className="text-right">
+                    <span className="text-xs font-semibold inline-block text-blue-600">
+                      {calculateRemainingTime()}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="overflow-hidden h-2 text-xs flex rounded bg-gray-100">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progressPercentage}%` }}
+                  transition={{
+                    duration: 0.5,
+                    ease: "easeInOut",
+                  }}
+                  className={`
+                    shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center
+                    ${
+                      status === "error"
+                        ? "bg-red-500"
+                        : status === "completed"
+                          ? "bg-green-500"
+                          : status === "transcribing"
+                            ? "bg-gradient-to-r from-blue-400 to-blue-500"
+                            : "bg-gradient-to-r from-indigo-400 to-indigo-500"
+                    }
+                  `}
+                >
+                  {/* シャイニングエフェクトを削除してパフォーマンスを改善 */}
+                </motion.div>
+              </div>
             </div>
           </motion.div>
         )}
