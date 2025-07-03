@@ -24,11 +24,11 @@ export function ProgressBar({
     const maxSize = 25 * 1024 * 1024;
     const sizeRatio = Math.min(fileSize / maxSize, 1);
 
-    // 文字起こし中は0-50%、校正中は51-99%の範囲で進捗を表示
+    // 文字起こし中は0-75%、校正中は76-99%の範囲で進捗を表示（より早く進む）
     if (status === "transcribing") {
-      return Math.min(progress * 0.5 * (1 + sizeRatio), 50);
+      return Math.min(progress * 0.75 * (1 + sizeRatio), 75);
     } else if (status === "correcting") {
-      return Math.min(50 + progress * 0.49, 99);
+      return Math.min(75 + progress * 0.24, 99);
     } else if (status === "completed") {
       return 100;
     }
@@ -151,7 +151,7 @@ export function ProgressBar({
           <motion.div
             initial={{ width: 0 }}
             animate={{ width: `${adjustedProgress}%` }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
             className={`shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center ${
               status === "error"
                 ? "bg-red-500"
