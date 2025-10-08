@@ -6,7 +6,16 @@ export async function getAudioUploadUrl(file: File): Promise<{
   fileUrl: string;
 }> {
   const timestamp = Date.now();
-  const fileName = encodeURIComponent(`${timestamp}-${file.name}`);
+
+  // ファイル名を正規化
+  const normalizedFileName = file.name
+    .replace(/[　\s]+/g, "_") // 全角・半角スペースをアンダースコアに
+    .replace(/[（）()[\]{}「」、。,\.]/g, "_") // 括弧や句読点をアンダースコアに
+    .replace(/_+/g, "_") // 連続するアンダースコアを1つに
+    .replace(/[^\w\-_.]/g, "") // 英数字、ハイフン、アンダースコア、ピリオド以外を削除
+    .toLowerCase(); // 小文字に変換
+
+  const fileName = encodeURIComponent(`${timestamp}-${normalizedFileName}`);
 
   const response = await fetch("/api/audio-upload", {
     method: "POST",
