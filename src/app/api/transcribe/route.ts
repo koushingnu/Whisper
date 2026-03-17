@@ -94,13 +94,30 @@ export async function POST(request: NextRequest) {
     bucket = process.env.S3_BUCKET_NAME!;
     key = url.pathname.slice(1); // 先頭の'/'を削除
 
+    // ファイル名と MIME type をキーから判定
+    const fileName = key.split("/").pop() || "audio";
+    const ext = fileName.split(".").pop()?.toLowerCase() || "mp3";
+    const mimeTypeMap: Record<string, string> = {
+      mp3: "audio/mpeg",
+      mp4: "audio/mp4",
+      mpeg: "audio/mpeg",
+      mpga: "audio/mpeg",
+      m4a: "audio/mp4",
+      wav: "audio/wav",
+      webm: "audio/webm",
+      ogg: "audio/ogg",
+      oga: "audio/ogg",
+      flac: "audio/flac",
+    };
+    const mimeType = mimeTypeMap[ext] || "audio/mpeg";
+
     console.log("Downloading file from S3");
     const audioData = await downloadFileFromS3(bucket, key);
 
     console.log("Sending request to Whisper API");
     // OpenAI APIにファイルを送信
     const response = await openai.audio.transcriptions.create({
-      file: new File([audioData], "audio.mp3", { type: "audio/mpeg" }),
+      file: new File([audioData], fileName, { type: mimeType }),
       model: "whisper-1",
       language: "ja",
       response_format: "verbose_json",
