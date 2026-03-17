@@ -132,6 +132,8 @@ export async function POST(request: NextRequest) {
         language: "ja",
         response_format: "verbose_json",
         timestamp_granularities: ["segment"],
+        // ハルシネーション抑制: 実際の通話内容に近いプロンプトを与える
+        prompt: "以下は日本語の通話・会話の文字起こしです。",
       });
     } finally {
       // 一時ファイルを削除
@@ -143,6 +145,22 @@ export async function POST(request: NextRequest) {
     await deleteFileFromS3(bucket, key);
 
     console.log("Whisper API response received");
+
+    // Whisper ハルシネーション単語を除去
+    const HALLUCINATION_PATTERNS = [
+      /おだしょ[ーっ]/g,
+      /小田しょ[ーっ]/g,
+      // 無音・雑音時に挿入される定型フレーズ
+      /ご視聴ありがとうございました[。！]?/g,
+      /チャンネル登録[・と]高評価[をお願いします。！]*/g,
+    ];
+
+    let transcribedText = response.text;
+    for (const pattern of HALLUCINATION_PATTERNS) {
+      transcribedText = transcribedText.replace(pattern, "");
+    }
+    transcribedText = transcribedText.replace(/\s{2,}/g, " ").trim();
+
     // レスポンスからタイムスタンプ情報を抽出
     const segments = response.segments || [];
     const timestamps = segments.map((segment) => ({
@@ -153,7 +171,7 @@ export async function POST(request: NextRequest) {
     console.log("Processing completed successfully");
     return new Response(
       JSON.stringify({
-        text: response.text,
+        text: transcribedText,
         timestamps: timestamps,
       }),
       {

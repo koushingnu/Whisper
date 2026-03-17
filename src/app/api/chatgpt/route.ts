@@ -189,9 +189,10 @@ export async function POST(request: NextRequest) {
       : modifiedText;
 
     // 話者ラベルを後処理で除去（改行・フォーマットは保持）
+    // 行頭の「名前：」「名前、」形式を除去（コロン・読点どちらも対応）
     const correctedText = rawCorrectedText
       .split("\n")
-      .map((line: string) => line.replace(/^[^\s：:。、]{1,20}[：:]\s*/, "").trimEnd())
+      .map((line: string) => line.replace(/^[^\s：:。、\n]{1,20}[：:、]\s*/, "").trimEnd())
       .join("\n");
 
     // 2. 適用したルール
