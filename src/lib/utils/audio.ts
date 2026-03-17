@@ -7,14 +7,19 @@ export async function getAudioUploadUrl(file: File): Promise<{
 }> {
   const timestamp = Date.now();
 
-  // ファイル名を正規化
-  const normalizedFileName = file.name
+  // 拡張子を保持したままベース名だけを正規化
+  const lastDotIndex = file.name.lastIndexOf(".");
+  const ext = lastDotIndex !== -1 ? file.name.slice(lastDotIndex).toLowerCase() : "";
+  const baseName = lastDotIndex !== -1 ? file.name.slice(0, lastDotIndex) : file.name;
+
+  const normalizedBase = baseName
     .replace(/[　\s]+/g, "_") // 全角・半角スペースをアンダースコアに
-    .replace(/[（）()[\]{}「」、。,\.]/g, "_") // 括弧や句読点をアンダースコアに
+    .replace(/[（）()[\]{}「」、。,.]/g, "_") // 括弧や句読点をアンダースコアに（ドットは除く）
     .replace(/_+/g, "_") // 連続するアンダースコアを1つに
-    .replace(/[^\w\-_.]/g, "") // 英数字、ハイフン、アンダースコア、ピリオド以外を削除
+    .replace(/[^\w\-_]/g, "") // 英数字、ハイフン、アンダースコア以外を削除
     .toLowerCase(); // 小文字に変換
 
+  const normalizedFileName = `${normalizedBase}${ext}`;
   const fileName = encodeURIComponent(`${timestamp}-${normalizedFileName}`);
 
   const response = await fetch("/api/audio-upload", {
