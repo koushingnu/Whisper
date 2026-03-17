@@ -1,9 +1,12 @@
 import { NextRequest } from "next/server";
-import OpenAI, { toFile } from "openai";
+import OpenAI from "openai";
 import { GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client } from "@/lib/s3";
 import { Readable } from "stream";
 import { Buffer } from "buffer";
+import fs from "fs";
+import path from "path";
+import os from "os";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -114,17 +117,26 @@ export async function POST(request: NextRequest) {
 
     console.log("Downloading file from S3");
     const audioData = await downloadFileFromS3(bucket, key);
+    console.log(`Downloaded: fileName=${fileName}, ext=${ext}, mimeType=${mimeType}, size=${audioData.length}`);
 
-    console.log(`Sending to Whisper: fileName=${fileName}, ext=${ext}, mimeType=${mimeType}, size=${audioData.length}`);
-    // OpenAI APIにファイルを送信（toFile で確実にフォーマットを伝える）
-    const audioFile = await toFile(audioData, fileName, { type: mimeType });
-    const response = await openai.audio.transcriptions.create({
-      file: audioFile,
-      model: "whisper-1",
-      language: "ja",
-      response_format: "verbose_json",
-      timestamp_granularities: ["segment"],
-    });
+    // /tmp に書き出して createReadStream で送信（最も確実な方法）
+    const tmpPath = path.join(os.tmpdir(), `whisper-${Date.now()}.${ext}`);
+    fs.writeFileSync(tmpPath, audioData);
+
+    let response;
+    try {
+      console.log(`Sending to Whisper via tmpFile: ${tmpPath}`);
+      response = await openai.audio.transcriptions.create({
+        file: fs.createReadStream(tmpPath),
+        model: "whisper-1",
+        language: "ja",
+        response_format: "verbose_json",
+        timestamp_granularities: ["segment"],
+      });
+    } finally {
+      // 一時ファイルを削除
+      try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
+    }
 
     // 一時ファイルを削除
     console.log("Deleting temporary file from S3");
