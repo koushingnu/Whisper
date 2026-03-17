@@ -95,7 +95,9 @@ export function isValidAudioFile(file: File): boolean {
     "audio/webm",
     "audio/ogg",
     "audio/x-m4a",
+    "audio/mp4",
     "audio/aac",
+    "audio/flac",
   ];
   return validTypes.includes(file.type);
 }

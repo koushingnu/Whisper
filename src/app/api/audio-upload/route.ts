@@ -30,7 +30,9 @@ export async function POST(request: NextRequest) {
       "audio/webm",
       "audio/ogg",
       "audio/x-m4a",
+      "audio/mp4",
       "audio/aac",
+      "audio/flac",
     ];
 
     if (!allowedTypes.includes(fileType)) {

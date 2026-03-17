@@ -102,12 +102,13 @@ export async function POST(request: NextRequest) {
       mp4: "audio/mp4",
       mpeg: "audio/mpeg",
       mpga: "audio/mpeg",
-      m4a: "audio/mp4",
+      m4a: "audio/x-m4a",
       wav: "audio/wav",
       webm: "audio/webm",
       ogg: "audio/ogg",
       oga: "audio/ogg",
       flac: "audio/flac",
+      aac: "audio/aac",
     };
     const mimeType = mimeTypeMap[ext] || "audio/mpeg";
 
