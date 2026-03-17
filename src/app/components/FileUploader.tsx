@@ -266,7 +266,9 @@ export default function FileUploader({
       });
 
       if (!response.ok) {
-        throw new Error("文字起こしに失敗しました");
+        const errorData = await response.json().catch(() => null);
+        const detail = errorData?.details || errorData?.error || response.statusText;
+        throw new Error(`文字起こしに失敗しました: ${detail}`);
       }
 
       const result = await response.json();

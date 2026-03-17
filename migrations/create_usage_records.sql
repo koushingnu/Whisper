@@ -12,4 +12,14 @@ create table if not exists usage_records (
 
 -- インデックスの作成
 create index if not exists usage_records_date_idx on usage_records(date);
-create index if not exists usage_records_user_date_idx on usage_records(user_id, date); 
+create index if not exists usage_records_user_date_idx on usage_records(user_id, date);
+
+-- RLS の有効化
+alter table usage_records enable row level security;
+
+-- 全操作を全員に許可
+create policy "Allow all for all"
+on usage_records
+for all
+using (true)
+with check (true); 
