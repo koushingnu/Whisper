@@ -125,9 +125,15 @@ export async function POST(request: NextRequest) {
 
     const dictionary = await loadDictionary();
 
+    // 話者ラベル（「〇〇：」形式）を除去
+    const cleanedText = text
+      .split("\n")
+      .map((line: string) => line.replace(/^[^\s：:]{1,20}[：:]\s*/, ""))
+      .join("\n");
+
     // まず機械的に辞書ルールを適用
     const { modifiedText, appliedRules } = applyDictionaryRules(
-      text,
+      cleanedText,
       dictionary
     );
 
@@ -159,6 +165,11 @@ export async function POST(request: NextRequest) {
 - インデントの統一
 - スペースの統一
 
+厳守事項：
+- 話者ラベル（「〇〇：」「話者A：」などの形式）は絶対に追加しないでください
+- 入力テキストに話者ラベルが含まれている場合は、必ず削除してください
+- 純粋な会話・発話内容のみを出力してください
+
 出力形式：
 1. 校正後のテキスト
 2. 適用した辞書ルールの一覧（どのルールを適用したか、何箇所変換したか）
@@ -169,7 +180,7 @@ export async function POST(request: NextRequest) {
         },
         {
           role: "user",
-          content: `${dictionaryRules}\n\n以下のテキストを校正してください。既に一部の辞書ルールが適用されている可能性がありますが、漏れがないか確認してください：\n\n${modifiedText}\n\n変換前のテキスト（参考用）：\n${text}`,
+          content: `${dictionaryRules}\n\n以下のテキストを校正してください。既に一部の辞書ルールが適用されている可能性がありますが、漏れがないか確認してください：\n\n${modifiedText}\n\n変換前のテキスト（参考用）：\n${cleanedText}`,
         },
       ],
       temperature: 0.1, // より決定論的な出力に
