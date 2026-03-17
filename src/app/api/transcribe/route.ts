@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import OpenAI from "openai";
+import OpenAI, { toFile } from "openai";
 import { GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client } from "@/lib/s3";
 import { Readable } from "stream";
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
       mp4: "audio/mp4",
       mpeg: "audio/mpeg",
       mpga: "audio/mpeg",
-      m4a: "audio/x-m4a",
+      m4a: "audio/mp4",
       wav: "audio/wav",
       webm: "audio/webm",
       ogg: "audio/ogg",
@@ -115,10 +115,11 @@ export async function POST(request: NextRequest) {
     console.log("Downloading file from S3");
     const audioData = await downloadFileFromS3(bucket, key);
 
-    console.log("Sending request to Whisper API");
-    // OpenAI APIにファイルを送信
+    console.log(`Sending to Whisper: fileName=${fileName}, ext=${ext}, mimeType=${mimeType}, size=${audioData.length}`);
+    // OpenAI APIにファイルを送信（toFile で確実にフォーマットを伝える）
+    const audioFile = await toFile(audioData, fileName, { type: mimeType });
     const response = await openai.audio.transcriptions.create({
-      file: new File([audioData], fileName, { type: mimeType }),
+      file: audioFile,
       model: "whisper-1",
       language: "ja",
       response_format: "verbose_json",
