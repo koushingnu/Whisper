@@ -217,6 +217,7 @@ export default function Home() {
                   <FileUploader
                     onTranscriptionComplete={handleTranscriptionComplete}
                     onError={handleError}
+                    onReset={handleReset}
                     isProcessing={
                       transcriptionStatus === "transcribing" ||
                       transcriptionStatus === "correcting"

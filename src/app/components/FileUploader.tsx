@@ -20,6 +20,7 @@ interface FileUploaderProps {
     fileSize: number
   ) => void;
   onError: (error: string) => void;
+  onReset: () => void;
   onAudioDurationChange: (duration: number) => void;
   isProcessing: boolean;
   progress: number;
@@ -30,6 +31,7 @@ interface FileUploaderProps {
 export default function FileUploader({
   onTranscriptionComplete,
   onError,
+  onReset,
   onAudioDurationChange,
   isProcessing,
   progress,
@@ -288,6 +290,13 @@ export default function FileUploader({
 
   const handleProcessFile = async () => {
     if (!selectedFile) return;
+
+    // 再実行前に全状態をリセット
+    onReset();
+    setProgressPercentage(0);
+    setShowProgressBar(false);
+    setUploadProgress("");
+    setCorrectionStartTime(null);
 
     try {
       // 音声ファイルの長さを取得
