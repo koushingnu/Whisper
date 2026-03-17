@@ -125,14 +125,7 @@ export async function POST(request: NextRequest) {
 
     const dictionary = await loadDictionary();
 
-    // 話者ラベルを除去（行頭の「名前：」形式、および本文中の「名前 」形式）
-    const cleanedText = text
-      // 行頭の「名前：」形式を除去
-      .replace(/^[^\s：:。、\n]{1,20}[：:]\s*/gm, "")
-      // 本文中に繰り返し出現する話者名パターン（例: 「おだしょー 」）を除去
-      // ひらがな・カタカナ・英数字のみで構成される2〜10文字の単語の後にスペースが続くパターン
-      .replace(/(?<=[。、\n\s]|^)[\u3040-\u309F\u30A0-\u30FF\w]{2,10}[ーっン][\s　]/g, "")
-      .trim();
+    const cleanedText = text;
 
     // まず機械的に辞書ルールを適用
     const { modifiedText, appliedRules } = applyDictionaryRules(
@@ -163,16 +156,10 @@ export async function POST(request: NextRequest) {
 - 敬語の統一性
 - 冗長な表現の改善
 
-3. フォーマット（必須）
-- 文章の意味的なまとまりごとに改行を入れてください
-- 話題や場面が変わる箇所には空行を入れてください
-- 1つの発話・文が終わったら改行してください
-- 読みやすい段落構成にしてください
-
-厳守事項：
-- 話者ラベル（「〇〇：」「話者A：」「おだしょー」などの人名・ニックネームの表記）は絶対に追加・残存させないでください
-- 入力テキストに話者名や人名が含まれている場合は必ず削除してください
-- 純粋な発話内容・会話の文字起こしのみを出力してください
+3. フォーマット
+- 適切な改行位置
+- インデントの統一
+- スペースの統一
 
 出力形式：
 1. 校正後のテキスト
@@ -197,9 +184,15 @@ export async function POST(request: NextRequest) {
     const correctedTextMatch = content.match(
       /1\.\s*校正後のテキスト[：:]\s*([\s\S]*?)(?=\n2\.)/
     );
-    const correctedText = correctedTextMatch
+    const rawCorrectedText = correctedTextMatch
       ? correctedTextMatch[1].trim()
       : modifiedText;
+
+    // 話者ラベルを後処理で除去（改行・フォーマットは保持）
+    const correctedText = rawCorrectedText
+      .split("\n")
+      .map((line: string) => line.replace(/^[^\s：:。、]{1,20}[：:]\s*/, "").trimEnd())
+      .join("\n");
 
     // 2. 適用したルール
     const appliedRulesMatch = content.match(
